@@ -3,7 +3,13 @@ export const STORAGE_KEY = "random-daily-v1"
 export const LAST_EXPORT_AT_KEY = "random-daily-last-export-at"
 
 export type TaskPriority = 1 | 2 | 3
-export type Task = { id: string; text: string; priority: TaskPriority }
+export type Task = {
+  id: string
+  text: string
+  priority: TaskPriority
+  /** Optional longer context; omitted when empty. */
+  notes?: string
+}
 export type Pool = { id: string; name: string; tasks: Task[] }
 export type DailyPlanItem = {
   id: string
@@ -11,6 +17,7 @@ export type DailyPlanItem = {
   taskId: string
   text: string
   priority?: TaskPriority
+  notes?: string
   done: boolean
 }
 export type DailyPlan = { date: string; items: DailyPlanItem[] }
@@ -31,12 +38,20 @@ export function normalizeTask(raw: {
   id: string
   text: string
   priority?: unknown
+  notes?: unknown
 }): Task {
   const p = raw.priority
-  if (p === 1 || p === 2 || p === 3) {
-    return { id: raw.id, text: raw.text, priority: p }
+  const priority: TaskPriority =
+    p === 1 || p === 2 || p === 3 ? p : 1
+  const n = raw.notes
+  const notes =
+    typeof n === "string" && n.trim() !== "" ? n : undefined
+  return {
+    id: raw.id,
+    text: raw.text,
+    priority,
+    ...(notes !== undefined ? { notes } : {}),
   }
-  return { id: raw.id, text: raw.text, priority: 1 }
 }
 
 export function assertValidSnapshot(data: unknown): AppSnapshot {
@@ -51,7 +66,14 @@ export function assertValidSnapshot(data: unknown): AppSnapshot {
     id: String(p.id),
     name: String(p.name ?? ""),
     tasks: (p.tasks ?? []).map((t) =>
-      normalizeTask(t as { id: string; text: string; priority?: unknown }),
+      normalizeTask(
+        t as {
+          id: string
+          text: string
+          priority?: unknown
+          notes?: unknown
+        },
+      ),
     ),
   }))
   let dailyPlan: DailyPlan | null = null

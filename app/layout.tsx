@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google"
 import "./globals.css"
 import { QueryProvider } from "@/components/query-provider"
 import { ThemeProvider } from "@/components/theme-provider"
+import { RandomDailyProvider } from "@/components/random-daily-provider"
 import { cn } from "@/lib/utils";
 
 const geist = Geist({subsets:['latin'],variable:'--font-sans'})
@@ -25,7 +26,9 @@ export default function RootLayout({
     >
       <body>
         <QueryProvider>
-          <ThemeProvider>{children}</ThemeProvider>
+          <ThemeProvider>
+            <RandomDailyProvider>{children}</RandomDailyProvider>
+          </ThemeProvider>
         </QueryProvider>
       </body>
     </html>
