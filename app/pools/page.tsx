@@ -111,9 +111,14 @@ export default function PoolsPage() {
             Task pools
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Recurring backlog tasks by pool. Edit title and notes with the pencil.
-            P1–P3 set draw weight. Changes persist in this browser and sync to Gist
-            when configured.
+            Manage standing tasks per pool; use the pencil to edit title and notes.
+            <span className="text-foreground"> Green</span>
+            {" "}is archive (never drawn into today);
+            <span className="text-foreground"> yellow</span>
+            {" "}is random (subject to that pool&apos;s &quot;Random count&quot; on Daily plan);
+            <span className="text-foreground"> red</span>
+            {" "}is mandatory (all included when you generate today). Data stays on this
+            device; optional Gist sync on this page.
           </p>
         </header>
 
@@ -211,8 +216,8 @@ export default function PoolsPage() {
                     <div className="h-px w-full bg-border" />
 
                     <p className="font-mono text-xs text-muted-foreground">
-                      Solid green / yellow / red = P1–P3 (1–3 tickets in the bowl).
-                      Use the pencil to edit title and notes.
+                      Colors: green = archive · yellow = random · red = mandatory. Pencil
+                      edits title and notes.
                     </p>
                     {p.tasks.length === 0 ? (
                       <p className="font-mono text-sm text-muted-foreground">

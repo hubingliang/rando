@@ -1,0 +1,11 @@
+---
+description: All product UI copy must be in English
+alwaysApply: true
+---
+
+# Product copy language
+
+- **User-facing text** (page titles, body copy, labels, buttons, dialog titles and descriptions, empty states, placeholders, tooltips, `aria-label`, `title`, and any string shown in the app shell) MUST be written in **English**.
+- Match the existing tone: short labels where the UI already uses monospace, sentence case for descriptions unless the screen uses all-caps labels intentionally.
+- **Do not** add Chinese or other locale strings for in-app copy unless the project explicitly adopts i18n (separate locale files and a deliberate localization plan).
+- **Code comments**, commit messages, and agent/skill docs may remain technical English; this rule targets **what end users see in the running app**.

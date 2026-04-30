@@ -1,10 +1,12 @@
 "use client"
 
+import { useMemo } from "react"
 import Link from "next/link"
 import { Copy, Dices } from "lucide-react"
 
 import { RandomDailyNav } from "@/components/random-daily-nav"
 import { useRandomDaily } from "@/components/random-daily-provider"
+import { taskPriorityDotBgClass } from "@/components/task-priority-radios"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -25,6 +27,71 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { partitionTasksForDraw } from "@/lib/random-daily-helpers"
+import type { DailyPlanItem, TaskPriority } from "@/lib/snapshot"
+
+function groupPlanItemsByPool(
+  items: DailyPlanItem[],
+  pools: { id: string; name: string }[],
+): { poolId: string; name: string; items: DailyPlanItem[] }[] {
+  const map = new Map<string, DailyPlanItem[]>()
+  for (const item of items) {
+    const list = map.get(item.poolId)
+    if (list) list.push(item)
+    else map.set(item.poolId, [item])
+  }
+  const out: { poolId: string; name: string; items: DailyPlanItem[] }[] = []
+  const seen = new Set<string>()
+  for (const p of pools) {
+    const group = map.get(p.id)
+    if (group?.length) {
+      out.push({ poolId: p.id, name: p.name, items: group })
+      seen.add(p.id)
+    }
+  }
+  for (const poolId of map.keys()) {
+    if (!seen.has(poolId)) {
+      const group = map.get(poolId)!
+      out.push({
+        poolId,
+        name: pools.find((x) => x.id === poolId)?.name ?? "—",
+        items: group,
+      })
+    }
+  }
+  return out
+}
+
+function roleTag(pr?: TaskPriority): string {
+  if (pr === 1) return "Archive"
+  if (pr === 2) return "Random"
+  if (pr === 3) return "Mandatory"
+  return ""
+}
+
+function DailyPlanPriorityTrail({
+  priority,
+  faded,
+}: {
+  priority: TaskPriority
+  faded?: boolean
+}) {
+  if (priority === 2 || priority === 3) {
+    return (
+      <span
+        role="img"
+        aria-label={roleTag(priority)}
+        title={roleTag(priority)}
+        className={cn(
+          "mt-1 size-2.5 shrink-0 rounded-full",
+          taskPriorityDotBgClass[priority],
+          faded && "opacity-45",
+        )}
+      />
+    )
+  }
+  return null
+}
 
 export default function DailyPlanPage() {
   const {
@@ -45,6 +112,11 @@ export default function DailyPlanPage() {
     copyDone,
   } = useRandomDaily()
 
+  const planGroups = useMemo(() => {
+    if (!todaysPlan?.items.length) return []
+    return groupPlanItemsByPool(todaysPlan.items, pools)
+  }, [todaysPlan, pools])
+
   return (
     <div className="min-h-svh bg-background text-foreground">
       <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-12 sm:px-6 sm:py-16">
@@ -58,9 +130,14 @@ export default function DailyPlanPage() {
             Daily plan
           </h1>
           <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Today&apos;s draws and checkboxes. Completion is scoped to the current
-            day only; pools live under Task pools. Generate uses a weighted bowl:
-            P1–P3 add 1–3 tickets — higher weight surfaces more often.
+            Checkboxes apply only to today; pools live on Task pools. Rules:
+            <span className="text-foreground"> Red</span>
+            {" "}tasks are mandatory and all go into today;
+            <span className="text-foreground"> yellow</span>
+            {" "}tasks are random picks—each included pool contributes up to its
+            &quot;Random count&quot; without replacement;
+            <span className="text-foreground"> green</span>
+            {" "}is archive (kept in the pool but never drawn into today).
           </p>
         </header>
 
@@ -84,54 +161,75 @@ export default function DailyPlanPage() {
                     : "No plan yet. Add pools and tasks on Task pools, configure shuffle below, then Generate."}
                 </p>
               ) : (
-                <ul className="space-y-0 border border-border">
-                  {todaysPlan.items.map((item, i) => (
-                    <li
-                      key={item.id}
-                      className={cn(
-                        "flex items-start gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
-                        "bg-card",
-                      )}
-                    >
-                      <Checkbox
-                        id={`day-${item.id}`}
-                        checked={item.done}
-                        onCheckedChange={(v) =>
-                          toggleItemDone(item.id, v === true)
-                        }
-                        className="mt-0.5"
-                        aria-label={`Complete ${item.text}`}
-                      />
-                      <div className="min-w-0 flex-1">
-                        <label
-                          htmlFor={`day-${item.id}`}
-                          className={cn(
-                            "font-mono text-sm leading-snug",
-                            item.done && "text-muted-foreground line-through",
-                          )}
-                        >
-                          {String(i + 1).padStart(2, "0")} · {item.text}
-                        </label>
-                        {item.notes != null && item.notes.trim() !== "" ? (
-                          <p
+                <div className="space-y-6">
+                  {planGroups.map((group) => (
+                    <div key={group.poolId} className="space-y-2">
+                      <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">
+                        {group.name}
+                      </p>
+                      <ul className="m-0 list-none space-y-0 border border-border p-0">
+                        {group.items.map((item) => (
+                          <li
+                            key={item.id}
                             className={cn(
-                              "mt-1 whitespace-pre-wrap font-mono text-xs leading-snug text-muted-foreground",
-                              item.done && "line-through opacity-70",
+                              "flex items-start gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
+                              "bg-card",
                             )}
                           >
-                            {item.notes}
-                          </p>
-                        ) : null}
-                        <p className="mt-0.5 font-mono text-[0.65rem] text-muted-foreground">
-                          {pools.find((p) => p.id === item.poolId)?.name ?? "—"}
-                          {item.priority != null
-                            ? ` · P${item.priority}`
-                            : ""}
-                        </p>
-                      </div>
-                    </li>
+                            <Checkbox
+                              id={`day-${item.id}`}
+                              checked={item.done}
+                              onCheckedChange={(v) =>
+                                toggleItemDone(item.id, v === true)
+                              }
+                              className="mt-0.5 shrink-0"
+                              aria-label={`Complete ${item.text}`}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <label
+                                htmlFor={`day-${item.id}`}
+                                className={cn(
+                                  "font-mono text-sm leading-snug",
+                                  item.done &&
+                                    "text-muted-foreground line-through",
+                                )}
+                              >
+                                {item.text}
+                              </label>
+                              {item.notes != null &&
+                              item.notes.trim() !== "" ? (
+                                <p
+                                  className={cn(
+                                    "mt-1 whitespace-pre-wrap font-mono text-xs leading-snug text-muted-foreground",
+                                    item.done && "line-through opacity-70",
+                                  )}
+                                >
+                                  {item.notes}
+                                </p>
+                              ) : null}
+                              {item.priority === 1 ? (
+                                <p
+                                  className={cn(
+                                    "mt-0.5 font-mono text-[0.65rem] text-muted-foreground",
+                                    item.done && "opacity-70 line-through",
+                                  )}
+                                >
+                                  {roleTag(item.priority)}
+                                </p>
+                              ) : null}
+                            </div>
+                            {item.priority === 2 || item.priority === 3 ? (
+                              <DailyPlanPriorityTrail
+                                priority={item.priority}
+                                faded={item.done}
+                              />
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   ))}
-                </ul>
+                </div>
               )}
             </CardContent>
           </Card>
@@ -159,6 +257,8 @@ export default function DailyPlanPage() {
                       include: true,
                       count: 1,
                     }
+                    const { archived, yellowCandidates, mandatory } =
+                      partitionTasksForDraw(p.tasks)
                     return (
                       <li
                         key={p.id}
@@ -184,7 +284,7 @@ export default function DailyPlanPage() {
                             htmlFor={`n-${p.id}`}
                             className="font-mono text-xs whitespace-nowrap text-muted-foreground"
                           >
-                            Pick
+                            Random count
                           </Label>
                           <Input
                             id={`n-${p.id}`}
@@ -200,7 +300,8 @@ export default function DailyPlanPage() {
                           />
                         </div>
                         <p className="font-mono text-[0.65rem] text-muted-foreground sm:text-right">
-                          {p.tasks.length} in pool
+                          Mandatory {mandatory.length} · Random{" "}
+                          {yellowCandidates.length} · Archive {archived.length}
                         </p>
                       </li>
                     )
@@ -252,8 +353,10 @@ export default function DailyPlanPage() {
             <DialogHeader>
               <DialogTitle>Nothing to draw</DialogTitle>
               <DialogDescription className="font-mono text-sm">
-                Include at least one pool that has tasks and set pick count to at
-                least 1.
+                Included pools must be able to produce at least one task. Having red
+                (mandatory) tasks is enough. If you rely only on yellow random picks,
+                set &quot;Random count&quot; to ≥ 1 and make sure the pool has at least
+                one yellow task.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>

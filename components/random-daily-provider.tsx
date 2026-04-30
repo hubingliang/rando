@@ -20,7 +20,8 @@ import {
   buildDefaultShuffleConfig,
   loadSnapshot,
   newId,
-  pickRandomTasks,
+  partitionTasksForDraw,
+  pickRandomSubset,
   todayYmd,
 } from "@/lib/random-daily-helpers"
 import {
@@ -456,9 +457,29 @@ export function RandomDailyProvider({
     for (const pool of pools) {
       const cfg = shuffleConfig[pool.id] ?? { include: true, count: 1 }
       if (!cfg.include) continue
-      if (cfg.count < 1) continue
       if (pool.tasks.length === 0) continue
-      for (const t of pickRandomTasks(pool.tasks, cfg.count)) {
+
+      const { mandatory, yellowCandidates } = partitionTasksForDraw(pool.tasks)
+
+      for (const t of mandatory) {
+        items.push({
+          id: newId(),
+          poolId: pool.id,
+          taskId: t.id,
+          text: t.text,
+          priority: t.priority,
+          ...(t.notes != null && t.notes.trim() !== ""
+            ? { notes: t.notes }
+            : {}),
+          done: false,
+        })
+      }
+
+      const randomYellow = pickRandomSubset(
+        yellowCandidates,
+        Math.max(0, cfg.count),
+      )
+      for (const t of randomYellow) {
         items.push({
           id: newId(),
           poolId: pool.id,

@@ -31,33 +31,30 @@ export function shuffleArray<T>(array: T[]): T[] {
   return arr
 }
 
-export function ticketWeight(t: Task): number {
-  const p = t.priority
-  if (p === 1 || p === 2 || p === 3) return p
-  return 1
+/** Green P1 = archived (never drawn). Yellow P2 = random candidate pool. Red P3 = mandatory for each generate. */
+export function partitionTasksForDraw(tasks: Task[]): {
+  archived: Task[]
+  yellowCandidates: Task[]
+  mandatory: Task[]
+} {
+  const archived: Task[] = []
+  const yellowCandidates: Task[] = []
+  const mandatory: Task[] = []
+  for (const t of tasks) {
+    const p = t.priority
+    if (p === 1) archived.push(t)
+    else if (p === 2) yellowCandidates.push(t)
+    else if (p === 3) mandatory.push(t)
+    else archived.push(t)
+  }
+  return { archived, yellowCandidates, mandatory }
 }
 
-/** Build a "bowl" of tickets: priority N adds N entries; shuffle; take up to k unique tasks in draw order. */
-export function pickRandomTasks(tasks: Task[], n: number): Task[] {
+/** Uniform random subset without replacement, size up to `n`. */
+export function pickRandomSubset(tasks: Task[], n: number): Task[] {
   if (tasks.length === 0 || n < 1) return []
   const k = Math.min(n, tasks.length)
-  const bowl: Task[] = []
-  for (const t of tasks) {
-    const w = ticketWeight(t)
-    for (let i = 0; i < w; i++) {
-      bowl.push(t)
-    }
-  }
-  const shuffled = shuffleArray(bowl)
-  const picked: Task[] = []
-  const seen = new Set<string>()
-  for (const ticket of shuffled) {
-    if (seen.has(ticket.id)) continue
-    seen.add(ticket.id)
-    picked.push(ticket)
-    if (picked.length >= k) break
-  }
-  return picked
+  return shuffleArray([...tasks]).slice(0, k)
 }
 
 export function loadSnapshot(): AppSnapshot {

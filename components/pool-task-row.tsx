@@ -20,8 +20,8 @@ export function PoolTaskRow({
   onPriorityChange: (p: TaskPriority) => void
 }) {
   return (
-    <li className="flex flex-col gap-2 border-b border-border bg-card px-2 py-2 last:border-b-0 sm:flex-row sm:items-start sm:gap-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+    <li className="flex flex-col gap-2 border-b border-border bg-card px-2 py-2 last:border-b-0 sm:flex-row sm:items-center sm:gap-3">
+      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0 flex-1">
           <p className="font-mono text-sm break-words">{task.text}</p>
           {task.notes?.trim() ? (
@@ -30,7 +30,7 @@ export function PoolTaskRow({
             </p>
           ) : null}
         </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 self-end sm:self-start">
+        <div className="flex shrink-0 flex-wrap items-center gap-2 self-end sm:self-auto">
           <TaskPriorityRadios
             name={`priority-${poolId}-${task.id}`}
             value={task.priority}

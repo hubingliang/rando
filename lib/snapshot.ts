@@ -2,6 +2,7 @@ export const STORAGE_KEY = "random-daily-v1"
 /** ISO time of last successful Gist push or Gist/clipboard apply — for sync hints only. */
 export const LAST_EXPORT_AT_KEY = "random-daily-last-export-at"
 
+/** Task role by priority / dot color: 1 green archive, 2 yellow random pick pool, 3 red mandatory daily. */
 export type TaskPriority = 1 | 2 | 3
 export type Task = {
   id: string
