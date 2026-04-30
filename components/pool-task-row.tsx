@@ -40,7 +40,6 @@ export function PoolTaskRow({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 shrink-0"
             onClick={onEdit}
             aria-label="Edit task"
           >
@@ -50,7 +49,6 @@ export function PoolTaskRow({
             type="button"
             variant="ghost"
             size="icon"
-            className="h-8 shrink-0"
             onClick={onRemove}
             aria-label="Delete task"
           >

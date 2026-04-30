@@ -27,11 +27,13 @@ import {
 import {
   type AppSnapshot,
   type DailyPlan,
+  type DailyPlanHistory,
   type DailyPlanItem,
   type Pool,
   type ShuffleConfig,
   type Task,
   type TaskPriority,
+  coerceAppSnapshot,
   parseAppSnapshotString,
   loadGithubCreds,
   saveGithubCreds,
@@ -45,6 +47,7 @@ export type RandomDailyContextValue = {
   ready: boolean
   pools: Pool[]
   dailyPlan: DailyPlan | null
+  dailyPlanHistory: DailyPlanHistory
   shuffleConfig: ShuffleConfig
   activePoolTab: string
   setActivePoolTab: React.Dispatch<React.SetStateAction<string>>
@@ -127,6 +130,8 @@ export function RandomDailyProvider({
 }) {
   const [pools, setPools] = React.useState<Pool[]>([])
   const [dailyPlan, setDailyPlan] = React.useState<DailyPlan | null>(null)
+  const [dailyPlanHistory, setDailyPlanHistory] =
+    React.useState<DailyPlanHistory>({})
   const [shuffleConfig, setShuffleConfig] = React.useState<ShuffleConfig>({})
   const [ready, setReady] = React.useState(false)
   const [activePoolTab, setActivePoolTab] = React.useState("")
@@ -162,17 +167,26 @@ export function RandomDailyProvider({
   const skipGistPushRef = React.useRef(false)
   const autoGistPullDoneRef = React.useRef(false)
 
-  const applyAppSnapshot = React.useCallback((s: AppSnapshot) => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(s))
-    setPools(s.pools)
-    setDailyPlan(s.dailyPlan)
-    setShuffleConfig(buildDefaultShuffleConfig(s.pools, s.shuffleConfig))
-    if (s.pools[0]) {
-      setActivePoolTab(s.pools[0].id)
-    } else {
-      setActivePoolTab("")
-    }
-  }, [])
+  const applyAppSnapshot = React.useCallback(
+    (
+      raw: Pick<AppSnapshot, "pools" | "dailyPlan" | "shuffleConfig"> & {
+        dailyPlanHistory?: DailyPlanHistory
+      },
+    ) => {
+      const full = coerceAppSnapshot(raw)
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(full))
+      setPools(full.pools)
+      setDailyPlan(full.dailyPlan)
+      setDailyPlanHistory(full.dailyPlanHistory)
+      setShuffleConfig(buildDefaultShuffleConfig(full.pools, full.shuffleConfig))
+      if (full.pools[0]) {
+        setActivePoolTab(full.pools[0].id)
+      } else {
+        setActivePoolTab("")
+      }
+    },
+    [],
+  )
 
   const gistQuery = useQuery({
     queryKey: ["random-daily-gist", gistId],
@@ -191,7 +205,12 @@ export function RandomDailyProvider({
       if (!gistToken || !gistId) {
         throw new Error("Missing Gist token or id")
       }
-      const body = buildGistJson({ pools, dailyPlan, shuffleConfig })
+      const body = buildGistJson({
+        pools,
+        dailyPlan,
+        shuffleConfig,
+        dailyPlanHistory,
+      })
       await gistPut(gistToken, gistId, body)
       return body
     },
@@ -205,6 +224,7 @@ export function RandomDailyProvider({
     const s = loadSnapshot()
     setPools(s.pools)
     setDailyPlan(s.dailyPlan)
+    setDailyPlanHistory(s.dailyPlanHistory)
     setShuffleConfig(buildDefaultShuffleConfig(s.pools, s.shuffleConfig))
     if (s.pools[0]) {
       setActivePoolTab(s.pools[0].id)
@@ -217,9 +237,19 @@ export function RandomDailyProvider({
 
   React.useEffect(() => {
     if (!ready) return
-    const payload: AppSnapshot = { pools, dailyPlan, shuffleConfig }
+    const payload: AppSnapshot = {
+      pools,
+      dailyPlan,
+      shuffleConfig,
+      dailyPlanHistory,
+    }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [pools, dailyPlan, shuffleConfig, ready])
+  }, [pools, dailyPlan, shuffleConfig, dailyPlanHistory, ready])
+
+  React.useEffect(() => {
+    if (!ready || !dailyPlan) return
+    setDailyPlanHistory((h) => ({ ...h, [dailyPlan.date]: dailyPlan }))
+  }, [dailyPlan, ready])
 
   /** Persist PAT + Gist id whenever they change (previously only "Save settings" wrote these). */
   React.useEffect(() => {
@@ -254,6 +284,7 @@ export function RandomDailyProvider({
     pools,
     dailyPlan,
     shuffleConfig,
+    dailyPlanHistory,
     gistToken,
     gistId,
     gistQuery.isFetched,
@@ -273,6 +304,7 @@ export function RandomDailyProvider({
         pools: p.pools,
         dailyPlan: p.dailyPlan,
         shuffleConfig: p.shuffleConfig,
+        dailyPlanHistory: p.dailyPlanHistory,
       })
       setLastExportAt(p.exportedAt)
       skipGistPushRef.current = true
@@ -513,7 +545,12 @@ export function RandomDailyProvider({
   const copyDataToClipboard = async () => {
     try {
       const text = JSON.stringify(
-        { pools, dailyPlan, shuffleConfig } satisfies AppSnapshot,
+        {
+          pools,
+          dailyPlan,
+          shuffleConfig,
+          dailyPlanHistory,
+        } satisfies AppSnapshot,
         null,
         2,
       )
@@ -559,7 +596,12 @@ export function RandomDailyProvider({
     }
     setGistFormMsg("")
     try {
-      const body = buildGistJson({ pools, dailyPlan, shuffleConfig })
+      const body = buildGistJson({
+        pools,
+        dailyPlan,
+        shuffleConfig,
+        dailyPlanHistory,
+      })
       const { gistId: createdId } = await gistCreate(gistToken.trim(), body)
       setGistId(createdId)
       saveGithubCreds({ token: gistToken.trim(), gistId: createdId })
@@ -593,6 +635,7 @@ export function RandomDailyProvider({
         pools: p.pools,
         dailyPlan: p.dailyPlan,
         shuffleConfig: p.shuffleConfig,
+        dailyPlanHistory: p.dailyPlanHistory,
       })
       setLastExportAt(p.exportedAt)
       skipGistPushRef.current = true
@@ -608,6 +651,7 @@ export function RandomDailyProvider({
     ready,
     pools,
     dailyPlan,
+    dailyPlanHistory,
     shuffleConfig,
     activePoolTab,
     setActivePoolTab,

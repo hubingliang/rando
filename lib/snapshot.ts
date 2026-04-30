@@ -23,10 +23,40 @@ export type DailyPlanItem = {
 }
 export type DailyPlan = { date: string; items: DailyPlanItem[] }
 export type ShuffleConfig = Record<string, { include: boolean; count: number }>
+export type DailyPlanHistory = Record<string, DailyPlan>
 export type AppSnapshot = {
   pools: Pool[]
   dailyPlan: DailyPlan | null
   shuffleConfig: ShuffleConfig
+  /** Past (and current) draws keyed by `yyyy-mm-dd`; synced with export / Gist. */
+  dailyPlanHistory: DailyPlanHistory
+}
+
+export function mergeDailyPlanIntoHistory(
+  history: DailyPlanHistory,
+  plan: DailyPlan | null,
+): DailyPlanHistory {
+  if (!plan) return { ...history }
+  return { ...history, [plan.date]: plan }
+}
+
+function isYmd(s: string): boolean {
+  return /^\d{4}-\d{2}-\d{2}$/.test(s)
+}
+
+function parseDailyPlanHistoryField(raw: unknown): DailyPlanHistory {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+    return {}
+  }
+  const out: DailyPlanHistory = {}
+  for (const [key, val] of Object.entries(raw as Record<string, unknown>)) {
+    if (!isYmd(key)) continue
+    if (!val || typeof val !== "object") continue
+    const pl = val as Record<string, unknown>
+    if (typeof pl.date !== "string" || !Array.isArray(pl.items)) continue
+    out[key] = val as DailyPlan
+  }
+  return out
 }
 
 export const GIST_FILE_NAME = "random-daily-v1.json" as const
@@ -89,10 +119,32 @@ export function assertValidSnapshot(data: unknown): AppSnapshot {
     o.shuffleConfig && typeof o.shuffleConfig === "object" && o.shuffleConfig !== null
       ? (o.shuffleConfig as ShuffleConfig)
       : {}
+  let dailyPlanHistory = parseDailyPlanHistoryField(o.dailyPlanHistory)
+  dailyPlanHistory = mergeDailyPlanIntoHistory(dailyPlanHistory, dailyPlan)
   return {
     pools,
     dailyPlan,
     shuffleConfig,
+    dailyPlanHistory,
+  }
+}
+
+/** Merge loose imports into a full snapshot (e.g. older exports without `dailyPlanHistory`). */
+export function coerceAppSnapshot(input: {
+  pools: Pool[]
+  dailyPlan: DailyPlan | null
+  shuffleConfig: ShuffleConfig
+  dailyPlanHistory?: DailyPlanHistory
+}): AppSnapshot {
+  const dailyPlanHistory = mergeDailyPlanIntoHistory(
+    input.dailyPlanHistory ?? {},
+    input.dailyPlan,
+  )
+  return {
+    pools: input.pools,
+    dailyPlan: input.dailyPlan,
+    shuffleConfig: input.shuffleConfig,
+    dailyPlanHistory,
   }
 }
 

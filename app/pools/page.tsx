@@ -41,6 +41,7 @@ import {
 } from "@/components/ui/drawer"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { TaskPriorityRadios } from "@/components/task-priority-radios"
@@ -124,36 +125,32 @@ export default function PoolsPage() {
 
         <section className="space-y-3">
           <h2 className="text-sm font-medium tracking-tight">Pools</h2>
-          <div className="flex flex-col gap-2 rounded-lg border border-border bg-card p-3 sm:flex-row sm:items-end">
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <Label htmlFor="new-pool" className="text-xs">
-                New pool
-              </Label>
-              <Input
-                id="new-pool"
-                value={newPoolName}
-                onChange={(e) => setNewPoolName(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault()
-                    addPool()
-                  }
-                }}
-                placeholder="e.g. Deep Work"
+          <Card>
+            <CardContent>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <Label htmlFor="new-pool">New pool</Label>
+                <Input
+                  id="new-pool"
+                  value={newPoolName}
+                  onChange={(e) => setNewPoolName(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      addPool()
+                    }
+                  }}
+                  placeholder="e.g. Deep Work"
 
-              />
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={addPool}
-              className="h-8 shrink-0"
-            >
-              <Plus className="size-4" />
-              Add
-            </Button>
-          </div>
-
+                />
+              </div>
+              <Button type="button" variant="outline" onClick={addPool}>
+                <Plus className="size-4" />
+                Add
+              </Button>
+              </div>
+            </CardContent>
+          </Card>
           {pools.length === 0 ? (
             <p className="text-sm text-muted-foreground">
               No pools yet. Create one above.
@@ -162,37 +159,25 @@ export default function PoolsPage() {
             <Tabs
               value={activePoolTab}
               onValueChange={setActivePoolTab}
-              className="w-full"
+              className="w-full gap-3"
             >
-              <TabsList
-                variant="line"
-                className="h-auto w-full min-w-0 flex-wrap justify-start gap-0 overflow-hidden rounded-t-lg border border-border border-b-0 bg-muted/40 p-0"
-              >
+              <TabsList className="h-auto min-h-9 w-full flex-wrap justify-start gap-1.5 p-1.5">
                 {pools.map((p) => (
                   <TabsTrigger
                     key={p.id}
                     value={p.id}
-                    className="shrink-0 rounded-none border-r border-border px-3 text-xs data-active:border-b-transparent data-active:bg-background"
+                    className="shrink-0 px-3 py-2 text-xs"
                   >
                     {p.name}
                   </TabsTrigger>
                 ))}
               </TabsList>
               {pools.map((p) => (
-                <TabsContent
-                  key={p.id}
-                  value={p.id}
-                  className="mt-0 rounded-b-lg border border-t-0 border-border bg-card p-4"
-                >
-                  <div className="space-y-4">
+                <TabsContent key={p.id} value={p.id}>
+                  <div className="space-y-4 pt-6">
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                       <div className="min-w-0 flex-1 space-y-1.5">
-                        <Label
-                          htmlFor={`pool-name-${p.id}`}
-                          className="text-xs"
-                        >
-                          Pool name
-                        </Label>
+                        <Label htmlFor={`pool-name-${p.id}`}>Pool name</Label>
                         <Input
                           id={`pool-name-${p.id}`}
                           value={p.name}
@@ -204,16 +189,15 @@ export default function PoolsPage() {
                       </div>
                       <Button
                         type="button"
-                        variant="ghost"
+                        variant="destructive"
                         onClick={() => setPoolPendingDelete(p.id)}
-                        className="h-8 text-destructive hover:text-destructive"
                       >
                         <Trash2 className="size-4" />
                         Delete pool
                       </Button>
                     </div>
 
-                    <div className="h-px w-full bg-border" />
+                    <Separator />
 
                     <p className="text-xs text-muted-foreground">
                       Colors: green = archive · yellow = random · red = mandatory. Pencil
@@ -241,14 +225,10 @@ export default function PoolsPage() {
                     )}
 
                     <div className="space-y-1.5">
-                      <Label
-                        htmlFor={`task-${p.id}`}
-                        className="text-xs"
-                      >
-                        New task
-                      </Label>
+                      <Label htmlFor={`task-${p.id}`}>New task</Label>
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
-                        <Input
+                        <div className="min-w-0 flex-1">
+                          <Input
                           id={`task-${p.id}`}
                           value={newTaskText[p.id] ?? ""}
                           onChange={(e) => setTaskDraft(p.id, e.target.value)}
@@ -259,21 +239,21 @@ export default function PoolsPage() {
                             }
                           }}
                           placeholder="Type and add"
-                          className="min-w-0 flex-1"
                         />
-                        <TaskPriorityRadios
-                          name={`new-priority-${p.id}`}
-                          value={newTaskPriority[p.id] ?? 2}
-                          onChange={(pr) =>
-                            setNewTaskPriority((m) => ({ ...m, [p.id]: pr }))
-                          }
-                          className="shrink-0"
-                        />
+                        </div>
+                        <div className="shrink-0">
+                          <TaskPriorityRadios
+                            name={`new-priority-${p.id}`}
+                            value={newTaskPriority[p.id] ?? 2}
+                            onChange={(pr) =>
+                              setNewTaskPriority((m) => ({ ...m, [p.id]: pr }))
+                            }
+                          />
+                        </div>
                         <Button
                           type="button"
                           variant="secondary"
                           onClick={() => addTask(p.id)}
-                          className="h-8 shrink-0"
                         >
                           <Plus className="size-4" />
                           Add task
@@ -290,9 +270,9 @@ export default function PoolsPage() {
         <section className="space-y-3">
           <h2 className="text-sm font-medium tracking-tight">Gist sync</h2>
           <Card>
-            <CardHeader className="space-y-1 border-b border-border pb-3">
-              <CardTitle className="text-base">GitHub Gist</CardTitle>
-              <CardDescription className="text-xs">
+            <CardHeader>
+              <CardTitle>GitHub Gist</CardTitle>
+              <CardDescription>
                 Token and Gist id are saved in this browser as you type (
                 <span className="whitespace-nowrap">localStorage</span>). Pushes a
                 single file ({GIST_FILE_NAME}) to a secret gist, debounced ~2s after
@@ -301,9 +281,10 @@ export default function PoolsPage() {
                 GitHub.
               </CardDescription>
             </CardHeader>
-            <CardContent className="space-y-3 pt-4">
+            <CardContent>
+              <div className="space-y-3">
               <div className="space-y-1.5">
-                <Label htmlFor="gh-token" className="text-xs">
+                <Label htmlFor="gh-token">
                   Personal access token
                 </Label>
                 <Input
@@ -317,7 +298,7 @@ export default function PoolsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="gist-id" className="text-xs">
+                <Label htmlFor="gist-id">
                   Gist ID
                 </Label>
                 <Input
@@ -332,18 +313,18 @@ export default function PoolsPage() {
                 <Button
                   type="button"
                   variant="secondary"
+                  size="sm"
                   onClick={saveGistSettings}
-                  className="h-8 text-xs"
                 >
                   Re-fetch Gist
                 </Button>
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={() => {
                     void createGist()
                   }}
-                  className="h-8 text-xs"
                   disabled={!gistToken.trim()}
                 >
                   <Cloud className="size-4" />
@@ -352,10 +333,10 @@ export default function PoolsPage() {
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={() => {
                     void pullFromGist()
                   }}
-                  className="h-8 text-xs"
                   disabled={!gistToken.trim() || !gistId.trim()}
                 >
                   Load from Gist
@@ -392,6 +373,7 @@ export default function PoolsPage() {
                   ? "fetching Gist…"
                   : "Gist in sync (when configured)"}
               </p>
+              </div>
             </CardContent>
           </Card>
         </section>
@@ -405,7 +387,7 @@ export default function PoolsPage() {
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>Remove this pool?</AlertDialogTitle>
-              <AlertDialogDescription className="space-y-1 text-xs">
+              <AlertDialogDescription>
                 <span>
                   {poolPendingDelete
                     ? (pools.find((x) => x.id === poolPendingDelete)?.name ??
@@ -420,10 +402,7 @@ export default function PoolsPage() {
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction
-                className="bg-destructive/10 text-destructive hover:bg-destructive/20"
-                onClick={confirmRemovePool}
-              >
+              <AlertDialogAction variant="destructive" onClick={confirmRemovePool}>
                 Delete pool
               </AlertDialogAction>
             </AlertDialogFooter>
@@ -436,17 +415,17 @@ export default function PoolsPage() {
             if (!open) closeTaskEditor()
           }}
         >
-          <DrawerContent className="flex flex-col">
+          <DrawerContent>
             <DrawerHeader>
               <DrawerTitle>Edit task</DrawerTitle>
-              <DrawerDescription className="text-sm">
+              <DrawerDescription>
                 Title and notes stay in the pool. Today&apos;s draw copies them when
                 you generate on Daily plan.
               </DrawerDescription>
             </DrawerHeader>
             <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-4 pb-2">
               <div className="space-y-1.5">
-                <Label htmlFor="task-editor-title" className="text-xs">
+                <Label htmlFor="task-editor-title">
                   Title
                 </Label>
                 <Input
@@ -457,7 +436,7 @@ export default function PoolsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="task-editor-notes" className="text-xs">
+                <Label htmlFor="task-editor-notes">
                   Notes
                 </Label>
                 <Textarea
@@ -466,11 +445,10 @@ export default function PoolsPage() {
                   onChange={(e) => setTaskEditorNotes(e.target.value)}
                   placeholder="Optional"
                   rows={5}
-                  className="text-sm"
                 />
               </div>
             </div>
-            <DrawerFooter className="gap-2 sm:gap-0">
+            <DrawerFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -501,16 +479,16 @@ export default function PoolsPage() {
             }
           }}
         >
-          <DialogContent className="max-w-lg">
+          <DialogContent>
             <DialogHeader>
               <DialogTitle>Import data</DialogTitle>
-              <DialogDescription className="text-sm">
+              <DialogDescription>
                 Paste a JSON export (same format as &quot;Copy data&quot;). This
                 replaces the current in-browser data for {STORAGE_KEY}.
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-2">
-              <Label htmlFor="import-payload" className="text-xs">
+              <Label htmlFor="import-payload">
                 JSON
               </Label>
               <Textarea
@@ -520,8 +498,8 @@ export default function PoolsPage() {
                   setImportText(e.target.value)
                   setImportError("")
                 }}
-                className="min-h-32 text-xs"
-                placeholder='{"pools":[...], "dailyPlan": null, "shuffleConfig":{}}'
+                rows={12}
+                placeholder='{"pools":[...], "dailyPlan": null, "shuffleConfig": {}, "dailyPlanHistory": {}}'
                 spellCheck={false}
                 autoComplete="off"
                 aria-invalid={importError ? true : undefined}
@@ -530,7 +508,7 @@ export default function PoolsPage() {
                 <p className="text-xs text-destructive">{importError}</p>
               ) : null}
             </div>
-            <DialogFooter className="gap-2 sm:gap-0">
+            <DialogFooter>
               <Button
                 type="button"
                 variant="outline"
@@ -559,7 +537,6 @@ export default function PoolsPage() {
               variant="outline"
               size="sm"
               onClick={() => void copyDataToClipboard()}
-              className="h-8 text-xs"
             >
               <Copy className="size-4" />
               {copyDone ? "Copied" : "Copy data"}
@@ -573,7 +550,6 @@ export default function PoolsPage() {
                 setImportText("")
                 setImportOpen(true)
               }}
-              className="h-8 text-xs"
             >
               <Upload className="size-4" />
               Import

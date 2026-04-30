@@ -1,17 +1,18 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import Link from "next/link"
 import { Copy, Dices } from "lucide-react"
 
 import { RandomDailyNav } from "@/components/random-daily-nav"
+import { PlanCalendar } from "@/components/plan-calendar"
 import { useRandomDaily } from "@/components/random-daily-provider"
 import { taskPriorityDotBgClass } from "@/components/task-priority-radios"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card"
@@ -93,15 +94,26 @@ function DailyPlanPriorityTrail({
   return null
 }
 
+function formatLongDate(ymd: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ymd.trim())
+  if (!m) return ymd
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return ymd
+  return d.toLocaleDateString(undefined, {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  })
+}
+
 export default function DailyPlanPage() {
   const {
     pools,
     dailyPlan,
+    dailyPlanHistory,
     shuffleConfig,
     today,
-    todaysPlan,
-    completedCount,
-    totalCount,
     toggleItemDone,
     setInclude,
     setCount,
@@ -112,257 +124,333 @@ export default function DailyPlanPage() {
     copyDone,
   } = useRandomDaily()
 
+  const [calendarSelectedDate, setCalendarSelectedDate] = useState(today)
+
+  const datesWithPlans = useMemo(() => {
+    const s = new Set<string>()
+    for (const [k, plan] of Object.entries(dailyPlanHistory)) {
+      if (plan?.items?.length) s.add(k)
+    }
+    if (dailyPlan?.items?.length && dailyPlan.date) {
+      s.add(dailyPlan.date)
+    }
+    return s
+  }, [dailyPlanHistory, dailyPlan])
+
+  const displayPlan = useMemo(() => {
+    if (calendarSelectedDate === today) {
+      return dailyPlan?.date === today ? dailyPlan : null
+    }
+    return dailyPlanHistory[calendarSelectedDate] ?? null
+  }, [calendarSelectedDate, today, dailyPlan, dailyPlanHistory])
+
   const planGroups = useMemo(() => {
-    if (!todaysPlan?.items.length) return []
-    return groupPlanItemsByPool(todaysPlan.items, pools)
-  }, [todaysPlan, pools])
+    if (!displayPlan?.items.length) return []
+    return groupPlanItemsByPool(displayPlan.items, pools)
+  }, [displayPlan, pools])
+
+  const viewingToday = calendarSelectedDate === today
+  const interactivePlan =
+    viewingToday && displayPlan !== null && displayPlan.date === today
+
+  const headerCompleted = displayPlan
+    ? displayPlan.items.filter((i) => i.done).length
+    : 0
+  const headerTotal = displayPlan?.items.length ?? 0
 
   return (
     <div className="min-h-svh bg-background text-foreground">
-      <div className="mx-auto flex max-w-3xl flex-col gap-10 px-4 py-12 sm:px-6 sm:py-16">
+      <div className="mx-auto flex max-w-5xl flex-col gap-8 px-4 py-10 sm:px-6 sm:py-14">
         <RandomDailyNav />
 
-        <header className="space-y-2 border-b border-border pb-8">
-          <p className="text-xs tracking-widest text-muted-foreground uppercase">
-            Random Daily
+        <header className="space-y-4 border-b border-border pb-6">
+          <div className="space-y-1">
+            <p className="text-xs tracking-widest text-muted-foreground uppercase">
+              Random Daily
+            </p>
+            <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">
+              Daily plan
+            </h1>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            Pick a date in the calendar → tasks for that day appear in the main
+            column. Checkboxes only work for{" "}
+            <span className="text-foreground">today</span>.
           </p>
-          <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">
-            Daily plan
-          </h1>
-          <p className="max-w-2xl text-sm leading-relaxed text-muted-foreground">
-            Checkboxes apply only to today; pools live on Task pools. Rules:
-            <span className="text-foreground"> Red</span>
-            {" "}tasks are mandatory and all go into today;
-            <span className="text-foreground"> yellow</span>
-            {" "}tasks are random picks—each included pool contributes up to its
-            &quot;Random count&quot; without replacement;
-            <span className="text-foreground"> green</span>
-            {" "}is archive (kept in the pool but never drawn into today).
-          </p>
+          <details className="group text-sm text-muted-foreground">
+            <summary className="cursor-pointer text-foreground underline decoration-muted-foreground/50 underline-offset-2 hover:decoration-foreground">
+              Shuffle rules · dot colors
+            </summary>
+            <p className="mt-3 max-w-2xl leading-relaxed">
+              Pools live on Task pools.
+              <span className="text-foreground"> Red</span>
+              {" "}tasks are mandatory and all go into today;
+              <span className="text-foreground"> yellow</span>
+              {" "}tasks are random picks—each included pool contributes up to its
+              &quot;Random count&quot; without replacement;
+              <span className="text-foreground"> green</span>
+              {" "}is archive (never drawn into today). Past days are read-only;
+              history syncs with Copy data / Gist.
+            </p>
+          </details>
         </header>
 
-        <section className="space-y-4">
-          <Card>
-            <CardHeader className="space-y-1 border-b border-border">
-              <div className="flex flex-wrap items-end justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">Today</CardTitle>
-                  <CardDescription className="text-xs text-muted-foreground">
-                    {today} · {completedCount}/{totalCount} done
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4 pt-4">
-              {!todaysPlan || todaysPlan.items.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  {dailyPlan && dailyPlan.date !== today
-                    ? `No plan for ${today}. Stored draw is for ${dailyPlan.date} — generate for today.`
-                    : "No plan yet. Add pools and tasks on Task pools, configure shuffle below, then Generate."}
-                </p>
-              ) : (
-                <div className="space-y-6">
-                  {planGroups.map((group) => (
-                    <div key={group.poolId} className="space-y-2">
-                      <p className="text-xs tracking-wide text-muted-foreground uppercase">
-                        {group.name}
+        <div className="flex flex-col gap-8 lg:grid lg:grid-cols-[minmax(0,1fr)_252px] lg:items-start lg:gap-10">
+          <aside className="order-2 lg:order-2 lg:sticky lg:top-24">
+            <Card>
+              <CardHeader>
+                <CardTitle>Calendar</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <PlanCalendar
+                  today={today}
+                  selectedDate={calendarSelectedDate}
+                  onSelectDate={setCalendarSelectedDate}
+                  datesWithPlans={datesWithPlans}
+                />
+              </CardContent>
+            </Card>
+          </aside>
+
+          <div className="order-1 flex min-w-0 flex-col gap-8 lg:order-1">
+            <section>
+              <Card>
+                <CardHeader>
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0 space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <CardTitle>{formatLongDate(calendarSelectedDate)}</CardTitle>
+                        <Badge
+                          variant={viewingToday ? "secondary" : "outline"}
+                        >
+                          {viewingToday ? "Today" : "History"}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground tabular-nums">
+                        {calendarSelectedDate} · {headerCompleted}/{headerTotal}{" "}
+                        done
+                        {!viewingToday ? " · read-only" : null}
                       </p>
-                      <ul className="m-0 list-none space-y-0 border border-border p-0">
-                        {group.items.map((item) => (
-                          <li
-                            key={item.id}
-                            className={cn(
-                              "flex items-start gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
-                              "bg-card",
-                            )}
-                          >
-                            <Checkbox
-                              id={`day-${item.id}`}
-                              checked={item.done}
-                              onCheckedChange={(v) =>
-                                toggleItemDone(item.id, v === true)
-                              }
-                              className="mt-0.5 shrink-0"
-                              aria-label={`Complete ${item.text}`}
-                            />
-                            <div className="min-w-0 flex-1">
-                              <label
-                                htmlFor={`day-${item.id}`}
-                                className={cn(
-                                  "text-sm leading-snug",
-                                  item.done &&
-                                    "text-muted-foreground line-through",
-                                )}
-                              >
-                                {item.text}
-                              </label>
-                              {item.notes != null &&
-                              item.notes.trim() !== "" ? (
-                                <p
-                                  className={cn(
-                                    "mt-1 whitespace-pre-wrap text-xs leading-snug text-muted-foreground",
-                                    item.done && "line-through opacity-70",
-                                  )}
-                                >
-                                  {item.notes}
-                                </p>
-                              ) : null}
-                              {item.priority === 1 ? (
-                                <p
-                                  className={cn(
-                                    "mt-0.5 text-[0.65rem] text-muted-foreground",
-                                    item.done && "opacity-70 line-through",
-                                  )}
-                                >
-                                  {roleTag(item.priority)}
-                                </p>
-                              ) : null}
-                            </div>
-                            {item.priority === 2 || item.priority === 3 ? (
-                              <DailyPlanPriorityTrail
-                                priority={item.priority}
-                                faded={item.done}
-                              />
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
                     </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </section>
+                  </div>
+                </CardHeader>
 
-        <section className="space-y-3">
-          <h2 className="text-sm font-medium tracking-tight">Shuffle</h2>
-          <Card>
-            <CardContent className="space-y-4 pt-4">
-              {pools.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Add at least one pool on{" "}
-                  <Link
-                    href="/pools"
-                    className="underline underline-offset-2 hover:text-foreground"
-                  >
-                    Task pools
-                  </Link>
-                  .
-                </p>
-              ) : (
-                <ul className="space-y-0 border border-border">
-                  {pools.map((p) => {
-                    const cfg = shuffleConfig[p.id] ?? {
-                      include: true,
-                      count: 1,
-                    }
-                    const { archived, yellowCandidates, mandatory } =
-                      partitionTasksForDraw(p.tasks)
-                    return (
-                      <li
-                        key={p.id}
-                        className="grid gap-3 border-b border-border px-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4 last:border-b-0"
+                <CardContent>
+                  <div className="space-y-4">
+                    {!displayPlan || displayPlan.items.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">
+                        {viewingToday
+                          ? dailyPlan && dailyPlan.date !== today
+                            ? `No plan for ${today}. Stored draw is for ${dailyPlan.date} — generate for today.`
+                            : "No plan yet. Add pools and tasks on Task pools, configure shuffle below, then Generate."
+                          : `No saved daily plan for ${calendarSelectedDate}.`}
+                      </p>
+                    ) : (
+                      <div className="space-y-6">
+                        {planGroups.map((group) => (
+                          <div key={group.poolId} className="space-y-2">
+                            <p className="text-xs tracking-wide text-muted-foreground uppercase">
+                              {group.name}
+                            </p>
+                            <ul className="m-0 list-none space-y-0 border border-border p-0">
+                              {group.items.map((item) => (
+                                <li
+                                  key={item.id}
+                                  className={cn(
+                                    "flex items-start gap-3 border-b border-border px-3 py-2.5 last:border-b-0",
+                                    "bg-card",
+                                  )}
+                                >
+                                  <Checkbox
+                                    id={`day-${item.id}`}
+                                    checked={item.done}
+                                    disabled={!interactivePlan}
+                                    onCheckedChange={(v) =>
+                                      toggleItemDone(item.id, v === true)
+                                    }
+                                    aria-label={
+                                      interactivePlan
+                                        ? `Complete ${item.text}`
+                                        : `Done (read-only): ${item.text}`
+                                    }
+                                  />
+                                  <div className="min-w-0 flex-1">
+                                    <label
+                                      htmlFor={`day-${item.id}`}
+                                      className={cn(
+                                        "text-sm leading-snug",
+                                        !interactivePlan &&
+                                          "cursor-default",
+                                        item.done &&
+                                          "text-muted-foreground line-through",
+                                      )}
+                                    >
+                                      {item.text}
+                                    </label>
+                                    {item.notes != null &&
+                                    item.notes.trim() !== "" ? (
+                                      <p
+                                        className={cn(
+                                          "mt-1 whitespace-pre-wrap text-xs leading-snug text-muted-foreground",
+                                          item.done &&
+                                            "line-through opacity-70",
+                                        )}
+                                      >
+                                        {item.notes}
+                                      </p>
+                                    ) : null}
+                                    {item.priority === 1 ? (
+                                      <p
+                                        className={cn(
+                                          "mt-0.5 text-[0.65rem] text-muted-foreground",
+                                          item.done &&
+                                            "opacity-70 line-through",
+                                        )}
+                                      >
+                                        {roleTag(item.priority)}
+                                      </p>
+                                    ) : null}
+                                  </div>
+                                  {item.priority === 2 ||
+                                  item.priority === 3 ? (
+                                    <DailyPlanPriorityTrail
+                                      priority={item.priority}
+                                      faded={item.done}
+                                    />
+                                  ) : null}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
+
+            <section className="space-y-3">
+              <h2 className="text-sm font-medium tracking-tight">Shuffle</h2>
+              <Card>
+                <CardContent>
+                  <div className="space-y-4">
+                  {pools.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      Add at least one pool on{" "}
+                      <Link
+                        href="/pools"
+                        className="underline underline-offset-2 hover:text-foreground"
                       >
-                        <div className="flex items-center gap-2">
-                          <Checkbox
-                            id={`in-${p.id}`}
-                            checked={cfg.include}
-                            onCheckedChange={(v) =>
-                              setInclude(p.id, v === true)
-                            }
-                          />
-                          <Label
-                            htmlFor={`in-${p.id}`}
-                            className="text-sm"
+                        Task pools
+                      </Link>
+                      .
+                    </p>
+                  ) : (
+                    <ul className="space-y-0 border border-border">
+                      {pools.map((p) => {
+                        const cfg = shuffleConfig[p.id] ?? {
+                          include: true,
+                          count: 1,
+                        }
+                        const { archived, yellowCandidates, mandatory } =
+                          partitionTasksForDraw(p.tasks)
+                        return (
+                          <li
+                            key={p.id}
+                            className="grid gap-3 border-b border-border px-3 py-3 sm:grid-cols-[1fr_auto_auto] sm:items-center sm:gap-4 last:border-b-0"
                           >
-                            {p.name}
-                          </Label>
-                        </div>
-                        <div className="flex items-center gap-2 sm:justify-end">
-                          <Label
-                            htmlFor={`n-${p.id}`}
-                            className="text-xs whitespace-nowrap text-muted-foreground"
-                          >
-                            Random count
-                          </Label>
-                          <Input
-                            id={`n-${p.id}`}
-                            type="number"
-                            min={0}
-                            max={99}
-                            className="h-8 w-16 text-sm"
-                            value={cfg.count}
-                            onChange={(e) =>
-                              setCount(p.id, parseInt(e.target.value, 10))
-                            }
-                            disabled={!cfg.include}
-                          />
-                        </div>
-                        <p className="text-[0.65rem] text-muted-foreground sm:text-right">
-                          Mandatory {mandatory.length} · Random{" "}
-                          {yellowCandidates.length} · Archive {archived.length}
-                        </p>
-                      </li>
-                    )
-                  })}
-                </ul>
-              )}
-              <Button
-                type="button"
-                onClick={generatePlan}
-                className="h-9 w-full text-sm sm:w-auto"
-                disabled={!pools.length}
-              >
-                <Dices className="size-4" />
-                Generate Daily Plan
-              </Button>
-            </CardContent>
-          </Card>
-        </section>
+                            <div className="flex items-center gap-2">
+                              <Checkbox
+                                id={`in-${p.id}`}
+                                checked={cfg.include}
+                                onCheckedChange={(v) =>
+                                  setInclude(p.id, v === true)
+                                }
+                              />
+                              <Label htmlFor={`in-${p.id}`}>{p.name}</Label>
+                            </div>
+                            <div className="flex items-center gap-2 sm:justify-end">
+                              <Label htmlFor={`n-${p.id}`}>Random count</Label>
+                              <div className="w-16 shrink-0">
+                                <Input
+                                  id={`n-${p.id}`}
+                                  type="number"
+                                  min={0}
+                                  max={99}
+                                  value={cfg.count}
+                                  onChange={(e) =>
+                                    setCount(p.id, parseInt(e.target.value, 10))
+                                  }
+                                  disabled={!cfg.include}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-[0.65rem] text-muted-foreground sm:text-right">
+                              Mandatory {mandatory.length} · Random{" "}
+                              {yellowCandidates.length} · Archive{" "}
+                              {archived.length}
+                            </p>
+                          </li>
+                        )
+                      })}
+                    </ul>
+                  )}
+                  <Button
+                    type="button"
+                    size="lg"
+                    onClick={generatePlan}
+                    disabled={!pools.length}
+                  >
+                    <Dices className="size-4" />
+                    Generate Daily Plan
+                  </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            </section>
 
-        <footer className="space-y-3 border-t border-border pt-6">
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void copyDataToClipboard()}
-              className="h-8 text-xs"
-            >
-              <Copy className="size-4" />
-              {copyDone ? "Copied" : "Copy data"}
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="h-8 text-xs"
-              asChild
-            >
-              <Link href="/pools">Task pools & backup</Link>
-            </Button>
+            <footer className="space-y-3 border-t border-border pt-6">
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void copyDataToClipboard()}
+                >
+                  <Copy className="size-4" />
+                  {copyDone ? "Copied" : "Copy data"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  asChild
+                >
+                  <Link href="/pools">Task pools & backup</Link>
+                </Button>
+              </div>
+              <p className="text-[0.65rem] text-muted-foreground">
+                Import, Gist sync, and pool editing are on Task pools.
+              </p>
+            </footer>
           </div>
-          <p className="text-[0.65rem] text-muted-foreground">
-            Import, Gist sync, and pool editing are on Task pools.
-          </p>
-        </footer>
+        </div>
 
         <Dialog open={emptyGenerateOpen} onOpenChange={setEmptyGenerateOpen}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Nothing to draw</DialogTitle>
-              <DialogDescription className="text-sm">
-                Included pools must be able to produce at least one task. Having red
-                (mandatory) tasks is enough. If you rely only on yellow random picks,
-                set &quot;Random count&quot; to ≥ 1 and make sure the pool has at least
-                one yellow task.
+              <DialogDescription>
+                Included pools must be able to produce at least one task. Having
+                red (mandatory) tasks is enough. If you rely only on yellow
+                random picks, set &quot;Random count&quot; to ≥ 1 and make sure
+                the pool has at least one yellow task.
               </DialogDescription>
             </DialogHeader>
             <DialogFooter>
               <Button
                 type="button"
-
                 onClick={() => setEmptyGenerateOpen(false)}
               >
                 OK

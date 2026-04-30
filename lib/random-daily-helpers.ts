@@ -59,16 +59,31 @@ export function pickRandomSubset(tasks: Task[], n: number): Task[] {
 
 export function loadSnapshot(): AppSnapshot {
   if (typeof window === "undefined") {
-    return { pools: [], dailyPlan: null, shuffleConfig: {} }
+    return {
+      pools: [],
+      dailyPlan: null,
+      shuffleConfig: {},
+      dailyPlanHistory: {},
+    }
   }
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) {
-      return { pools: [], dailyPlan: null, shuffleConfig: {} }
+      return {
+        pools: [],
+        dailyPlan: null,
+        shuffleConfig: {},
+        dailyPlanHistory: {},
+      }
     }
     return assertValidSnapshot(JSON.parse(raw) as unknown)
   } catch {
-    return { pools: [], dailyPlan: null, shuffleConfig: {} }
+    return {
+      pools: [],
+      dailyPlan: null,
+      shuffleConfig: {},
+      dailyPlanHistory: {},
+    }
   }
 }
 

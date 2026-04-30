@@ -3,35 +3,32 @@
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 
-import { cn } from "@/lib/utils"
+import {
+  NavigationMenu,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+} from "@/components/ui/navigation-menu"
 
 export function RandomDailyNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="flex flex-wrap gap-6 border-b border-border pb-4 text-sm">
-      <Link
-        href="/"
-        className={cn(
-          "transition-colors",
-          pathname === "/"
-            ? "font-medium text-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        Daily plan
-      </Link>
-      <Link
-        href="/pools"
-        className={cn(
-          "transition-colors",
-          pathname === "/pools"
-            ? "font-medium text-foreground"
-            : "text-muted-foreground hover:text-foreground",
-        )}
-      >
-        Task pools
-      </Link>
+    <nav className="border-b border-border pb-4">
+      <NavigationMenu viewport={false}>
+        <NavigationMenuList className="flex-wrap justify-start gap-1">
+          <NavigationMenuItem>
+            <NavigationMenuLink asChild active={pathname === "/"}>
+              <Link href="/">Daily plan</Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+          <NavigationMenuItem>
+            <NavigationMenuLink asChild active={pathname === "/pools"}>
+              <Link href="/pools">Task pools</Link>
+            </NavigationMenuLink>
+          </NavigationMenuItem>
+        </NavigationMenuList>
+      </NavigationMenu>
     </nav>
   )
 }
