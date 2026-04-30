@@ -23,9 +23,9 @@ export function PoolTaskRow({
     <li className="flex flex-col gap-2 border-b border-border bg-card px-2 py-2 last:border-b-0 sm:flex-row sm:items-center sm:gap-3">
       <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
         <div className="min-w-0 flex-1">
-          <p className="font-mono text-sm break-words">{task.text}</p>
+          <p className="text-sm break-words">{task.text}</p>
           {task.notes?.trim() ? (
-            <p className="mt-1 line-clamp-3 whitespace-pre-wrap font-mono text-xs leading-snug text-muted-foreground">
+            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-snug text-muted-foreground">
               {task.notes}
             </p>
           ) : null}

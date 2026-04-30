@@ -9,7 +9,7 @@ export function RandomDailyNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="flex flex-wrap gap-6 border-b border-border pb-4 font-mono text-sm">
+    <nav className="flex flex-wrap gap-6 border-b border-border pb-4 text-sm">
       <Link
         href="/"
         className={cn(

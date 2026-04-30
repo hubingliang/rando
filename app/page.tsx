@@ -123,7 +123,7 @@ export default function DailyPlanPage() {
         <RandomDailyNav />
 
         <header className="space-y-2 border-b border-border pb-8">
-          <p className="font-mono text-xs tracking-widest text-muted-foreground uppercase">
+          <p className="text-xs tracking-widest text-muted-foreground uppercase">
             Random Daily
           </p>
           <h1 className="text-2xl font-medium tracking-tight sm:text-3xl">
@@ -142,12 +142,12 @@ export default function DailyPlanPage() {
         </header>
 
         <section className="space-y-4">
-          <Card className="border-border shadow-none">
+          <Card>
             <CardHeader className="space-y-1 border-b border-border">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
                   <CardTitle className="text-base">Today</CardTitle>
-                  <CardDescription className="font-mono text-xs text-muted-foreground">
+                  <CardDescription className="text-xs text-muted-foreground">
                     {today} · {completedCount}/{totalCount} done
                   </CardDescription>
                 </div>
@@ -155,7 +155,7 @@ export default function DailyPlanPage() {
             </CardHeader>
             <CardContent className="space-y-4 pt-4">
               {!todaysPlan || todaysPlan.items.length === 0 ? (
-                <p className="font-mono text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   {dailyPlan && dailyPlan.date !== today
                     ? `No plan for ${today}. Stored draw is for ${dailyPlan.date} — generate for today.`
                     : "No plan yet. Add pools and tasks on Task pools, configure shuffle below, then Generate."}
@@ -164,7 +164,7 @@ export default function DailyPlanPage() {
                 <div className="space-y-6">
                   {planGroups.map((group) => (
                     <div key={group.poolId} className="space-y-2">
-                      <p className="font-mono text-xs tracking-wide text-muted-foreground uppercase">
+                      <p className="text-xs tracking-wide text-muted-foreground uppercase">
                         {group.name}
                       </p>
                       <ul className="m-0 list-none space-y-0 border border-border p-0">
@@ -189,7 +189,7 @@ export default function DailyPlanPage() {
                               <label
                                 htmlFor={`day-${item.id}`}
                                 className={cn(
-                                  "font-mono text-sm leading-snug",
+                                  "text-sm leading-snug",
                                   item.done &&
                                     "text-muted-foreground line-through",
                                 )}
@@ -200,7 +200,7 @@ export default function DailyPlanPage() {
                               item.notes.trim() !== "" ? (
                                 <p
                                   className={cn(
-                                    "mt-1 whitespace-pre-wrap font-mono text-xs leading-snug text-muted-foreground",
+                                    "mt-1 whitespace-pre-wrap text-xs leading-snug text-muted-foreground",
                                     item.done && "line-through opacity-70",
                                   )}
                                 >
@@ -210,7 +210,7 @@ export default function DailyPlanPage() {
                               {item.priority === 1 ? (
                                 <p
                                   className={cn(
-                                    "mt-0.5 font-mono text-[0.65rem] text-muted-foreground",
+                                    "mt-0.5 text-[0.65rem] text-muted-foreground",
                                     item.done && "opacity-70 line-through",
                                   )}
                                 >
@@ -237,10 +237,10 @@ export default function DailyPlanPage() {
 
         <section className="space-y-3">
           <h2 className="text-sm font-medium tracking-tight">Shuffle</h2>
-          <Card className="border-border shadow-none">
+          <Card>
             <CardContent className="space-y-4 pt-4">
               {pools.length === 0 ? (
-                <p className="font-mono text-sm text-muted-foreground">
+                <p className="text-sm text-muted-foreground">
                   Add at least one pool on{" "}
                   <Link
                     href="/pools"
@@ -274,7 +274,7 @@ export default function DailyPlanPage() {
                           />
                           <Label
                             htmlFor={`in-${p.id}`}
-                            className="font-mono text-sm"
+                            className="text-sm"
                           >
                             {p.name}
                           </Label>
@@ -282,7 +282,7 @@ export default function DailyPlanPage() {
                         <div className="flex items-center gap-2 sm:justify-end">
                           <Label
                             htmlFor={`n-${p.id}`}
-                            className="font-mono text-xs whitespace-nowrap text-muted-foreground"
+                            className="text-xs whitespace-nowrap text-muted-foreground"
                           >
                             Random count
                           </Label>
@@ -291,7 +291,7 @@ export default function DailyPlanPage() {
                             type="number"
                             min={0}
                             max={99}
-                            className="h-8 w-16 font-mono text-sm"
+                            className="h-8 w-16 text-sm"
                             value={cfg.count}
                             onChange={(e) =>
                               setCount(p.id, parseInt(e.target.value, 10))
@@ -299,7 +299,7 @@ export default function DailyPlanPage() {
                             disabled={!cfg.include}
                           />
                         </div>
-                        <p className="font-mono text-[0.65rem] text-muted-foreground sm:text-right">
+                        <p className="text-[0.65rem] text-muted-foreground sm:text-right">
                           Mandatory {mandatory.length} · Random{" "}
                           {yellowCandidates.length} · Archive {archived.length}
                         </p>
@@ -311,7 +311,7 @@ export default function DailyPlanPage() {
               <Button
                 type="button"
                 onClick={generatePlan}
-                className="h-9 w-full font-mono text-sm sm:w-auto"
+                className="h-9 w-full text-sm sm:w-auto"
                 disabled={!pools.length}
               >
                 <Dices className="size-4" />
@@ -328,7 +328,7 @@ export default function DailyPlanPage() {
               variant="outline"
               size="sm"
               onClick={() => void copyDataToClipboard()}
-              className="h-8 font-mono text-xs"
+              className="h-8 text-xs"
             >
               <Copy className="size-4" />
               {copyDone ? "Copied" : "Copy data"}
@@ -337,13 +337,13 @@ export default function DailyPlanPage() {
               type="button"
               variant="outline"
               size="sm"
-              className="h-8 font-mono text-xs"
+              className="h-8 text-xs"
               asChild
             >
               <Link href="/pools">Task pools & backup</Link>
             </Button>
           </div>
-          <p className="font-mono text-[0.65rem] text-muted-foreground">
+          <p className="text-[0.65rem] text-muted-foreground">
             Import, Gist sync, and pool editing are on Task pools.
           </p>
         </footer>
@@ -352,7 +352,7 @@ export default function DailyPlanPage() {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Nothing to draw</DialogTitle>
-              <DialogDescription className="font-mono text-sm">
+              <DialogDescription className="text-sm">
                 Included pools must be able to produce at least one task. Having red
                 (mandatory) tasks is enough. If you rely only on yellow random picks,
                 set &quot;Random count&quot; to ≥ 1 and make sure the pool has at least
@@ -362,7 +362,7 @@ export default function DailyPlanPage() {
             <DialogFooter>
               <Button
                 type="button"
-                className="font-mono"
+
                 onClick={() => setEmptyGenerateOpen(false)}
               >
                 OK
