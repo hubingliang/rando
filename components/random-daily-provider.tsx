@@ -39,7 +39,6 @@ import {
   saveGithubCreds,
   setLastExportAt,
   getLastExportAt,
-  mergeDailyPlanIntoHistory,
   STORAGE_KEY,
 } from "@/lib/snapshot"
 
@@ -313,37 +312,22 @@ export function RandomDailyProvider({
         p.dailyPlan != null ||
         Object.keys(p.dailyPlanHistory ?? {}).length > 0
 
-      if (pools.length === 0 && gistHasData) {
-        applyAppSnapshot({
-          pools: p.pools,
-          dailyPlan: p.dailyPlan,
-          shuffleConfig: p.shuffleConfig,
-          dailyPlanHistory: p.dailyPlanHistory,
-        })
-        setLastExportAt(p.exportedAt)
-        skipGistPushRef.current = true
+      const remoteIsNewer = remoteTime > localExportTime
+      const hydrateEmptyLocal = pools.length === 0 && gistHasData
+
+      if (!remoteIsNewer && !hydrateEmptyLocal) {
         lastAppliedRemoteExportRef.current = p.exportedAt
         return
       }
 
-      if (remoteTime <= localExportTime) {
-        lastAppliedRemoteExportRef.current = p.exportedAt
-        return
-      }
-
-      if (pools.length > 0) {
-        const mergedHistory = mergeDailyPlanIntoHistory(
-          p.dailyPlanHistory ?? {},
-          p.dailyPlan,
-        )
-        setDailyPlan(p.dailyPlan)
-        setDailyPlanHistory(mergedHistory)
-        setLastExportAt(p.exportedAt)
-        skipGistPushRef.current = true
-        lastAppliedRemoteExportRef.current = p.exportedAt
-        return
-      }
-
+      applyAppSnapshot({
+        pools: p.pools,
+        dailyPlan: p.dailyPlan,
+        shuffleConfig: p.shuffleConfig,
+        dailyPlanHistory: p.dailyPlanHistory,
+      })
+      setLastExportAt(p.exportedAt)
+      skipGistPushRef.current = true
       lastAppliedRemoteExportRef.current = p.exportedAt
     } catch {
       /* not our format */

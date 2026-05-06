@@ -118,8 +118,9 @@ export default function PoolsPage() {
             <span className="text-foreground"> yellow</span>
             {" "}is random (subject to that pool&apos;s &quot;Random count&quot; on Daily plan);
             <span className="text-foreground"> red</span>
-            {" "}is mandatory (all included when you generate today). Data stays on this
-            device; optional Gist sync on this page.
+            {" "}is mandatory (all included when you generate today). By default data stays
+            on this device; GitHub Gist below syncs the full snapshot across browsers when
+            you use the same token and gist id.
           </p>
         </header>
 
@@ -274,13 +275,15 @@ export default function PoolsPage() {
               <CardTitle>GitHub Gist</CardTitle>
               <CardDescription>
                 Token and Gist id are saved in this browser as you type (
-                <span className="whitespace-nowrap">localStorage</span>). Pushes a
-                single file ({GIST_FILE_NAME}) to a secret gist, debounced ~2s after
-                data changes (including daily plans and history). Uses our API route so
-                the token never calls GitHub from the open web (CORS). When another
-                device uploads a newer export, this browser merges that daily plan and
-                calendar history from the gist. &quot;Re-fetch Gist&quot; reloads the
-                preview from GitHub.
+                <span className="whitespace-nowrap">localStorage</span>). With the same
+                token and gist id on each device, the app keeps one shared snapshot:
+                pools, shuffle settings, today&apos;s plan, and plan history. Each save
+                uploads <span className="whitespace-nowrap">{GIST_FILE_NAME}</span>{" "}
+                (~2s debounced); when another device uploads a newer export, this
+                browser replaces its in-browser copy to match the gist (last export
+                wins). Uses our API route so the token never calls GitHub from the open
+                web (CORS). &quot;Re-fetch Gist&quot; reloads from GitHub;
+                &quot;Load from Gist&quot; applies the file after confirmation.
               </CardDescription>
             </CardHeader>
             <CardContent>
