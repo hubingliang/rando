@@ -38,6 +38,8 @@ import {
   loadGithubCreds,
   saveGithubCreds,
   setLastExportAt,
+  getLastExportAt,
+  mergeDailyPlanIntoHistory,
   STORAGE_KEY,
 } from "@/lib/snapshot"
 
@@ -165,7 +167,7 @@ export function RandomDailyProvider({
 
   const queryClient = useQueryClient()
   const skipGistPushRef = React.useRef(false)
-  const autoGistPullDoneRef = React.useRef(false)
+  const lastAppliedRemoteExportRef = React.useRef<string | null>(null)
 
   const applyAppSnapshot = React.useCallback(
     (
@@ -293,32 +295,60 @@ export function RandomDailyProvider({
 
   React.useEffect(() => {
     if (!ready || !gistQuery.isSuccess) return
-    if (!gistQuery.data?.content?.trim() || autoGistPullDoneRef.current) return
-    if (pools.length > 0) {
-      autoGistPullDoneRef.current = true
-      return
-    }
+    const raw = gistQuery.data?.content?.trim()
+    if (!raw) return
+
     try {
-      const p = readGistFilePayload(gistQuery.data.content)
-      applyAppSnapshot({
-        pools: p.pools,
-        dailyPlan: p.dailyPlan,
-        shuffleConfig: p.shuffleConfig,
-        dailyPlanHistory: p.dailyPlanHistory,
-      })
-      setLastExportAt(p.exportedAt)
-      skipGistPushRef.current = true
+      const p = readGistFilePayload(raw)
+      if (lastAppliedRemoteExportRef.current === p.exportedAt) return
+
+      const remoteTime = new Date(p.exportedAt).getTime()
+      const localExportIso = getLastExportAt()
+      const localExportTime = localExportIso
+        ? new Date(localExportIso).getTime()
+        : 0
+
+      const gistHasData =
+        p.pools.length > 0 ||
+        p.dailyPlan != null ||
+        Object.keys(p.dailyPlanHistory ?? {}).length > 0
+
+      if (pools.length === 0 && gistHasData) {
+        applyAppSnapshot({
+          pools: p.pools,
+          dailyPlan: p.dailyPlan,
+          shuffleConfig: p.shuffleConfig,
+          dailyPlanHistory: p.dailyPlanHistory,
+        })
+        setLastExportAt(p.exportedAt)
+        skipGistPushRef.current = true
+        lastAppliedRemoteExportRef.current = p.exportedAt
+        return
+      }
+
+      if (remoteTime <= localExportTime) {
+        lastAppliedRemoteExportRef.current = p.exportedAt
+        return
+      }
+
+      if (pools.length > 0) {
+        const mergedHistory = mergeDailyPlanIntoHistory(
+          p.dailyPlanHistory ?? {},
+          p.dailyPlan,
+        )
+        setDailyPlan(p.dailyPlan)
+        setDailyPlanHistory(mergedHistory)
+        setLastExportAt(p.exportedAt)
+        skipGistPushRef.current = true
+        lastAppliedRemoteExportRef.current = p.exportedAt
+        return
+      }
+
+      lastAppliedRemoteExportRef.current = p.exportedAt
     } catch {
       /* not our format */
     }
-    autoGistPullDoneRef.current = true
-  }, [
-    ready,
-    gistQuery.isSuccess,
-    gistQuery.data,
-    pools.length,
-    applyAppSnapshot,
-  ])
+  }, [ready, gistQuery.isSuccess, gistQuery.data, pools.length, applyAppSnapshot])
 
   const today = todayYmd()
   const todaysPlan =

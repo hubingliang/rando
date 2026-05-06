@@ -276,9 +276,11 @@ export default function PoolsPage() {
                 Token and Gist id are saved in this browser as you type (
                 <span className="whitespace-nowrap">localStorage</span>). Pushes a
                 single file ({GIST_FILE_NAME}) to a secret gist, debounced ~2s after
-                data changes. Uses our API route so the token never calls GitHub from
-                the open web (CORS). &quot;Re-fetch Gist&quot; reloads the preview from
-                GitHub.
+                data changes (including daily plans and history). Uses our API route so
+                the token never calls GitHub from the open web (CORS). When another
+                device uploads a newer export, this browser merges that daily plan and
+                calendar history from the gist. &quot;Re-fetch Gist&quot; reloads the
+                preview from GitHub.
               </CardDescription>
             </CardHeader>
             <CardContent>
