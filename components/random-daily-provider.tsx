@@ -88,6 +88,8 @@ export type RandomDailyContextValue = {
   completedCount: number
   totalCount: number
   addPool: () => void
+  /** Changes pool order used on Daily plan and in exports (swap with neighbor). */
+  movePool: (poolId: string, direction: "up" | "down") => void
   removePool: (id: string) => void
   confirmRemovePool: () => void
   addTask: (poolId: string) => void
@@ -344,6 +346,21 @@ export function RandomDailyProvider({
 
   const setTaskDraft = (poolId: string, v: string) => {
     setNewTaskText((m) => ({ ...m, [poolId]: v }))
+  }
+
+  const movePool = (poolId: string, direction: "up" | "down") => {
+    const delta = direction === "up" ? -1 : 1
+    setPools((prev) => {
+      const i = prev.findIndex((p) => p.id === poolId)
+      if (i < 0) return prev
+      const j = i + delta
+      if (j < 0 || j >= prev.length) return prev
+      const next = [...prev]
+      const t = next[i]!
+      next[i] = next[j]!
+      next[j] = t
+      return next
+    })
   }
 
   const addPool = () => {
@@ -703,6 +720,7 @@ export function RandomDailyProvider({
     completedCount,
     totalCount,
     addPool,
+    movePool,
     removePool,
     confirmRemovePool,
     addTask,
