@@ -41,6 +41,15 @@ import {
   getLastExportAt,
   STORAGE_KEY,
 } from "@/lib/snapshot"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 type GistGetData = Awaited<ReturnType<typeof gistGet>>
 
@@ -102,7 +111,6 @@ export type RandomDailyContextValue = {
   updatePoolName: (poolId: string, name: string) => void
   setInclude: (poolId: string, include: boolean) => void
   setCount: (poolId: string, count: number) => void
-  generatePlan: () => void
   toggleItemDone: (itemId: string, done: boolean) => void
   copyDataToClipboard: () => Promise<void>
   runImport: () => void
@@ -514,7 +522,7 @@ export function RandomDailyProvider({
     }))
   }
 
-  const generatePlan = () => {
+  const generatePlanForToday = React.useCallback((): boolean => {
     const date = todayYmd()
     const items: DailyPlanItem[] = []
     for (const pool of pools) {
@@ -558,10 +566,30 @@ export function RandomDailyProvider({
     }
     if (items.length === 0) {
       setEmptyGenerateOpen(true)
-      return
+      return false
     }
     setDailyPlan({ date, items })
-  }
+    return true
+  }, [pools, shuffleConfig])
+
+  React.useEffect(() => {
+    if (!ready) return
+    if (gistToken && gistId && !gistQuery.isFetched) return
+
+    const date = todayYmd()
+    if (dailyPlan?.date === date) return
+    if (pools.length === 0) return
+
+    generatePlanForToday()
+  }, [
+    ready,
+    gistToken,
+    gistId,
+    gistQuery.isFetched,
+    dailyPlan?.date,
+    pools.length,
+    generatePlanForToday,
+  ])
 
   const toggleItemDone = (itemId: string, done: boolean) => {
     setDailyPlan((plan) => {
@@ -729,7 +757,6 @@ export function RandomDailyProvider({
     updatePoolName,
     setInclude,
     setCount,
-    generatePlan,
     toggleItemDone,
     copyDataToClipboard,
     runImport,
@@ -752,6 +779,24 @@ export function RandomDailyProvider({
   return (
     <RandomDailyContext.Provider value={value}>
       {children}
+      <Dialog open={emptyGenerateOpen} onOpenChange={setEmptyGenerateOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Nothing to draw</DialogTitle>
+            <DialogDescription>
+              Included pools must be able to produce at least one task. Having
+              red (mandatory) tasks is enough. If you rely only on yellow random
+              picks, set &quot;Random count&quot; to ≥ 1 on Task pools and make
+              sure the pool has at least one yellow task.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" onClick={() => setEmptyGenerateOpen(false)}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </RandomDailyContext.Provider>
   )
 }

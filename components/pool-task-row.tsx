@@ -20,22 +20,22 @@ export function PoolTaskRow({
   onPriorityChange: (p: TaskPriority) => void
 }) {
   return (
-    <li className="flex flex-col gap-2 border-b border-border bg-card px-2 py-2 last:border-b-0 sm:flex-row sm:items-center sm:gap-3">
-      <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <div className="min-w-0 flex-1">
-          <p className="text-sm break-words">{task.text}</p>
-          {task.notes?.trim() ? (
-            <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-snug text-muted-foreground">
-              {task.notes}
-            </p>
-          ) : null}
-        </div>
-        <div className="flex shrink-0 flex-wrap items-center gap-2 self-end sm:self-auto">
-          <TaskPriorityRadios
-            name={`priority-${poolId}-${task.id}`}
-            value={task.priority}
-            onChange={onPriorityChange}
-          />
+    <li className="flex flex-col gap-3 border-b border-border bg-card px-3 py-3 last:border-b-0 sm:flex-row sm:items-center sm:gap-3 sm:px-2 sm:py-2">
+      <div className="min-w-0 flex-1">
+        <p className="text-sm break-words">{task.text}</p>
+        {task.notes?.trim() ? (
+          <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-snug text-muted-foreground">
+            {task.notes}
+          </p>
+        ) : null}
+      </div>
+      <div className="flex items-center justify-between gap-2 sm:shrink-0 sm:justify-end">
+        <TaskPriorityRadios
+          name={`priority-${poolId}-${task.id}`}
+          value={task.priority}
+          onChange={onPriorityChange}
+        />
+        <div className="flex items-center gap-0.5">
           <Button
             type="button"
             variant="ghost"
@@ -43,7 +43,7 @@ export function PoolTaskRow({
             onClick={onEdit}
             aria-label="Edit task"
           >
-            <Pencil className="size-4" />
+            <Pencil />
           </Button>
           <Button
             type="button"
@@ -52,7 +52,7 @@ export function PoolTaskRow({
             onClick={onRemove}
             aria-label="Delete task"
           >
-            <Trash2 className="size-4" />
+            <Trash2 />
           </Button>
         </div>
       </div>
