@@ -40,6 +40,7 @@ import {
   setLastExportAt,
   getLastExportAt,
   STORAGE_KEY,
+  hasTodaysPlan,
 } from "@/lib/snapshot"
 import { Button } from "@/components/ui/button"
 import {
@@ -231,6 +232,56 @@ export function RandomDailyProvider({
     },
   })
 
+  const generatePlanForToday = React.useCallback((): boolean => {
+    const date = todayYmd()
+    const items: DailyPlanItem[] = []
+    for (const pool of pools) {
+      const cfg = shuffleConfig[pool.id] ?? { include: true, count: 1 }
+      if (!cfg.include) continue
+      if (pool.tasks.length === 0) continue
+
+      const { mandatory, yellowCandidates } = partitionTasksForDraw(pool.tasks)
+
+      for (const t of mandatory) {
+        items.push({
+          id: newId(),
+          poolId: pool.id,
+          taskId: t.id,
+          text: t.text,
+          priority: t.priority,
+          ...(t.notes != null && t.notes.trim() !== ""
+            ? { notes: t.notes }
+            : {}),
+          done: false,
+        })
+      }
+
+      const randomYellow = pickRandomSubset(
+        yellowCandidates,
+        Math.max(0, cfg.count),
+      )
+      for (const t of randomYellow) {
+        items.push({
+          id: newId(),
+          poolId: pool.id,
+          taskId: t.id,
+          text: t.text,
+          priority: t.priority,
+          ...(t.notes != null && t.notes.trim() !== ""
+            ? { notes: t.notes }
+            : {}),
+          done: false,
+        })
+      }
+    }
+    if (items.length === 0) {
+      setEmptyGenerateOpen(true)
+      return false
+    }
+    setDailyPlan({ date, items })
+    return true
+  }, [pools, shuffleConfig])
+
   React.useEffect(() => {
     const s = loadSnapshot()
     setPools(s.pools)
@@ -303,46 +354,88 @@ export function RandomDailyProvider({
   ])
 
   React.useEffect(() => {
-    if (!ready || !gistQuery.isSuccess) return
-    const raw = gistQuery.data?.content?.trim()
-    if (!raw) return
+    if (!ready) return
 
-    try {
-      const p = readGistFilePayload(raw)
-      if (lastAppliedRemoteExportRef.current === p.exportedAt) return
+    const today = todayYmd()
+    const gistConfigured = Boolean(gistToken && gistId)
 
-      const remoteTime = new Date(p.exportedAt).getTime()
-      const localExportIso = getLastExportAt()
-      const localExportTime = localExportIso
-        ? new Date(localExportIso).getTime()
-        : 0
+    if (gistConfigured && !gistQuery.isFetched) return
 
-      const gistHasData =
-        p.pools.length > 0 ||
-        p.dailyPlan != null ||
-        Object.keys(p.dailyPlanHistory ?? {}).length > 0
+    if (gistConfigured && gistQuery.isSuccess) {
+      const raw = gistQuery.data?.content?.trim()
+      if (raw) {
+        try {
+          const p = readGistFilePayload(raw)
+          const localHasToday = hasTodaysPlan(
+            today,
+            dailyPlan,
+            dailyPlanHistory,
+          )
+          const remoteHasToday = hasTodaysPlan(
+            today,
+            p.dailyPlan,
+            p.dailyPlanHistory ?? {},
+          )
 
-      const remoteIsNewer = remoteTime > localExportTime
-      const hydrateEmptyLocal = pools.length === 0 && gistHasData
+          if (lastAppliedRemoteExportRef.current !== p.exportedAt) {
+            const remoteTime = new Date(p.exportedAt).getTime()
+            const localExportIso = getLastExportAt()
+            const localExportTime = localExportIso
+              ? new Date(localExportIso).getTime()
+              : 0
 
-      if (!remoteIsNewer && !hydrateEmptyLocal) {
-        lastAppliedRemoteExportRef.current = p.exportedAt
-        return
+            const gistHasData =
+              p.pools.length > 0 ||
+              p.dailyPlan != null ||
+              Object.keys(p.dailyPlanHistory ?? {}).length > 0
+
+            const remoteIsNewer = remoteTime > localExportTime
+            const hydrateEmptyLocal = pools.length === 0 && gistHasData
+            const shouldApplyRemote =
+              remoteIsNewer ||
+              hydrateEmptyLocal ||
+              (remoteHasToday && !localHasToday)
+
+            if (shouldApplyRemote) {
+              applyAppSnapshot({
+                pools: p.pools,
+                dailyPlan: p.dailyPlan,
+                shuffleConfig: p.shuffleConfig,
+                dailyPlanHistory: p.dailyPlanHistory,
+              })
+              setLastExportAt(p.exportedAt)
+              skipGistPushRef.current = true
+              lastAppliedRemoteExportRef.current = p.exportedAt
+              return
+            }
+
+            lastAppliedRemoteExportRef.current = p.exportedAt
+          }
+
+          if (remoteHasToday) return
+        } catch {
+          /* not our format */
+        }
       }
-
-      applyAppSnapshot({
-        pools: p.pools,
-        dailyPlan: p.dailyPlan,
-        shuffleConfig: p.shuffleConfig,
-        dailyPlanHistory: p.dailyPlanHistory,
-      })
-      setLastExportAt(p.exportedAt)
-      skipGistPushRef.current = true
-      lastAppliedRemoteExportRef.current = p.exportedAt
-    } catch {
-      /* not our format */
     }
-  }, [ready, gistQuery.isSuccess, gistQuery.data, pools.length, applyAppSnapshot])
+
+    if (hasTodaysPlan(today, dailyPlan, dailyPlanHistory)) return
+    if (pools.length === 0) return
+
+    generatePlanForToday()
+  }, [
+    ready,
+    gistToken,
+    gistId,
+    gistQuery.isFetched,
+    gistQuery.isSuccess,
+    gistQuery.data,
+    dailyPlan,
+    dailyPlanHistory,
+    pools.length,
+    applyAppSnapshot,
+    generatePlanForToday,
+  ])
 
   const today = todayYmd()
   const todaysPlan =
@@ -354,6 +447,16 @@ export function RandomDailyProvider({
 
   const setTaskDraft = (poolId: string, v: string) => {
     setNewTaskText((m) => ({ ...m, [poolId]: v }))
+  }
+
+  const toggleItemDone = (itemId: string, done: boolean) => {
+    setDailyPlan((plan) => {
+      if (!plan) return plan
+      return {
+        ...plan,
+        items: plan.items.map((i) => (i.id === itemId ? { ...i, done } : i)),
+      }
+    })
   }
 
   const movePool = (poolId: string, direction: "up" | "down") => {
@@ -520,85 +623,6 @@ export function RandomDailyProvider({
       ...c,
       [poolId]: { ...(c[poolId] ?? { include: true, count: 1 }), count: n },
     }))
-  }
-
-  const generatePlanForToday = React.useCallback((): boolean => {
-    const date = todayYmd()
-    const items: DailyPlanItem[] = []
-    for (const pool of pools) {
-      const cfg = shuffleConfig[pool.id] ?? { include: true, count: 1 }
-      if (!cfg.include) continue
-      if (pool.tasks.length === 0) continue
-
-      const { mandatory, yellowCandidates } = partitionTasksForDraw(pool.tasks)
-
-      for (const t of mandatory) {
-        items.push({
-          id: newId(),
-          poolId: pool.id,
-          taskId: t.id,
-          text: t.text,
-          priority: t.priority,
-          ...(t.notes != null && t.notes.trim() !== ""
-            ? { notes: t.notes }
-            : {}),
-          done: false,
-        })
-      }
-
-      const randomYellow = pickRandomSubset(
-        yellowCandidates,
-        Math.max(0, cfg.count),
-      )
-      for (const t of randomYellow) {
-        items.push({
-          id: newId(),
-          poolId: pool.id,
-          taskId: t.id,
-          text: t.text,
-          priority: t.priority,
-          ...(t.notes != null && t.notes.trim() !== ""
-            ? { notes: t.notes }
-            : {}),
-          done: false,
-        })
-      }
-    }
-    if (items.length === 0) {
-      setEmptyGenerateOpen(true)
-      return false
-    }
-    setDailyPlan({ date, items })
-    return true
-  }, [pools, shuffleConfig])
-
-  React.useEffect(() => {
-    if (!ready) return
-    if (gistToken && gistId && !gistQuery.isFetched) return
-
-    const date = todayYmd()
-    if (dailyPlan?.date === date) return
-    if (pools.length === 0) return
-
-    generatePlanForToday()
-  }, [
-    ready,
-    gistToken,
-    gistId,
-    gistQuery.isFetched,
-    dailyPlan?.date,
-    pools.length,
-    generatePlanForToday,
-  ])
-
-  const toggleItemDone = (itemId: string, done: boolean) => {
-    setDailyPlan((plan) => {
-      if (!plan) return plan
-      return {
-        ...plan,
-        items: plan.items.map((i) => (i.id === itemId ? { ...i, done } : i)),
-      }
-    })
   }
 
   const copyDataToClipboard = async () => {

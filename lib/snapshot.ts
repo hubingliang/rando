@@ -40,6 +40,19 @@ export function mergeDailyPlanIntoHistory(
   return { ...history, [plan.date]: plan }
 }
 
+/** True when `dailyPlan` or `dailyPlanHistory` already has a non-empty draw for `today`. */
+export function hasTodaysPlan(
+  today: string,
+  dailyPlan: DailyPlan | null,
+  history: DailyPlanHistory = {},
+): boolean {
+  if (dailyPlan?.date === today && (dailyPlan.items?.length ?? 0) > 0) {
+    return true
+  }
+  const saved = history[today]
+  return Boolean(saved?.items?.length)
+}
+
 function isYmd(s: string): boolean {
   return /^\d{4}-\d{2}-\d{2}$/.test(s)
 }
