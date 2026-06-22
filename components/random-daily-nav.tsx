@@ -2,13 +2,14 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { CalendarDays, Layers } from "lucide-react"
+import { BarChart3, CalendarDays, Layers } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
 const navItems = [
   { href: "/", label: "Daily plan", icon: CalendarDays },
   { href: "/pools", label: "Task pools", icon: Layers },
+  { href: "/stats", label: "Insights", icon: BarChart3 },
 ] as const
 
 export function RandomDailyNav() {

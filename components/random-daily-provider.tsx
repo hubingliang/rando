@@ -42,7 +42,10 @@ import {
   STORAGE_KEY,
   hasTodaysPlan,
 } from "@/lib/snapshot"
+import { toast } from "sonner"
+
 import { Button } from "@/components/ui/button"
+import { syncDailyReminderSchedule } from "@/lib/reminder"
 import {
   Dialog,
   DialogContent,
@@ -174,7 +177,6 @@ export function RandomDailyProvider({
   } | null>(null)
   const [taskEditorTitle, setTaskEditorTitle] = React.useState("")
   const [taskEditorNotes, setTaskEditorNotes] = React.useState("")
-
   const queryClient = useQueryClient()
   const skipGistPushRef = React.useRef(false)
   const lastAppliedRemoteExportRef = React.useRef<string | null>(null)
@@ -307,6 +309,22 @@ export function RandomDailyProvider({
     }
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
   }, [pools, dailyPlan, shuffleConfig, dailyPlanHistory, ready])
+
+  React.useEffect(() => {
+    if (!ready) return
+    void syncDailyReminderSchedule({ plan: dailyPlan })
+  }, [ready, dailyPlan])
+
+  React.useEffect(() => {
+    if (!ready) return
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") {
+        void syncDailyReminderSchedule({ plan: dailyPlan })
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => document.removeEventListener("visibilitychange", onVisibility)
+  }, [ready, dailyPlan])
 
   React.useEffect(() => {
     if (!ready || !dailyPlan) return
@@ -449,13 +467,27 @@ export function RandomDailyProvider({
     setNewTaskText((m) => ({ ...m, [poolId]: v }))
   }
 
+  const triggerAllDoneCelebration = React.useCallback(() => {
+    toast.success("All done for today.")
+  }, [])
+
   const toggleItemDone = (itemId: string, done: boolean) => {
     setDailyPlan((plan) => {
       if (!plan) return plan
-      return {
-        ...plan,
-        items: plan.items.map((i) => (i.id === itemId ? { ...i, done } : i)),
+      const prevAllDone = plan.items.every((i) => i.done)
+      const nextItems = plan.items.map((i) =>
+        i.id === itemId ? { ...i, done } : i,
+      )
+      const nextAllDone = nextItems.every((i) => i.done)
+      if (
+        !prevAllDone &&
+        nextAllDone &&
+        nextItems.length > 0 &&
+        done === true
+      ) {
+        queueMicrotask(() => triggerAllDoneCelebration())
       }
+      return { ...plan, items: nextItems }
     })
   }
 

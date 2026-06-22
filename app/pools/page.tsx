@@ -12,6 +12,7 @@ import {
 
 import { AppShell } from "@/components/app-shell"
 import { PoolTaskRow } from "@/components/pool-task-row"
+import { ReminderSettingsCard } from "@/components/reminder-settings-card"
 import { ShuffleConfigCard } from "@/components/shuffle-config-card"
 import { TaskEditorModal } from "@/components/task-editor-modal"
 import { useRandomDaily } from "@/components/random-daily-provider"
@@ -363,6 +364,8 @@ export default function PoolsPage() {
       </section>
 
       <ShuffleConfigCard />
+
+      <ReminderSettingsCard />
 
       <section>
         <Card>

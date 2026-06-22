@@ -5,6 +5,7 @@ import "./globals.css"
 import { QueryProvider } from "@/components/query-provider"
 import { ThemeProvider } from "@/components/theme-provider"
 import { RandomDailyProvider } from "@/components/random-daily-provider"
+import { Toaster } from "@/components/ui/sonner"
 import { cn } from "@/lib/utils"
 
 export const metadata: Metadata = {
@@ -69,6 +70,7 @@ export default function RootLayout({
         <QueryProvider>
           <ThemeProvider>
             <RandomDailyProvider>{children}</RandomDailyProvider>
+            <Toaster richColors closeButton />
           </ThemeProvider>
         </QueryProvider>
       </body>
