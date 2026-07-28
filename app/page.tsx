@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
-import { Copy } from "lucide-react"
+import { Copy, Shuffle } from "lucide-react"
 
 import { AppShell } from "@/components/app-shell"
 import { PlanCalendar } from "@/components/plan-calendar"
@@ -103,8 +103,10 @@ export default function DailyPlanPage() {
     dailyPlanHistory,
     today,
     toggleItemDone,
+    generateTodayPlan,
     copyDataToClipboard,
     copyDone,
+    syncStatus,
   } = useRandomDaily()
 
   const [calendarSelectedDate, setCalendarSelectedDate] = useState(today)
@@ -182,13 +184,32 @@ export default function DailyPlanPage() {
 
               <CardContent>
                 {!displayPlan || displayPlan.items.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    {viewingToday
-                      ? dailyPlan && dailyPlan.date !== today
-                        ? `No plan for ${today}. Stored draw is for ${dailyPlan.date}.`
-                        : "No plan yet. Add pools and tasks on Task pools."
-                      : `No saved daily plan for ${calendarSelectedDate}.`}
-                  </p>
+                  viewingToday ? (
+                    <div className="flex flex-col items-start gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        {pools.length === 0
+                          ? "No plan yet. Add pools and tasks on Task pools."
+                          : syncStatus === "error"
+                            ? "Sync is failing, so today's draw is on hold to avoid creating a second plan on another device."
+                            : "No plan for today yet."}
+                      </p>
+                      {pools.length > 0 ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="secondary"
+                          onClick={() => generateTodayPlan()}
+                        >
+                          <Shuffle />
+                          Draw today&apos;s plan
+                        </Button>
+                      ) : null}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {`No saved daily plan for ${calendarSelectedDate}.`}
+                    </p>
+                  )
                 ) : (
                   <div className="flex flex-col gap-6">
                     {planGroups.map((group) => (

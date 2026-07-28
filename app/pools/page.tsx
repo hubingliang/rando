@@ -6,6 +6,7 @@ import {
   Cloud,
   Copy,
   Plus,
+  RefreshCw,
   Trash2,
   Upload,
 } from "lucide-react"
@@ -71,8 +72,10 @@ export default function PoolsPage() {
     gistId,
     setGistId,
     gistFormMsg,
-    gistQuery,
-    pushGistMutation,
+    syncStatus,
+    syncError,
+    lastSyncedAt,
+    hasPendingChanges,
     copyDone,
     taskEditorOpen,
     taskEditorTitle,
@@ -90,9 +93,9 @@ export default function PoolsPage() {
     setActivePoolTab,
     copyDataToClipboard,
     runImport,
-    saveGistSettings,
+    syncNow,
     createGist,
-    pullFromGist,
+    replaceFromGist,
     openTaskEditor,
     closeTaskEditor,
     saveTaskEditor,
@@ -400,9 +403,19 @@ export default function PoolsPage() {
                   variant="secondary"
                   size="sm"
                   className="w-full sm:w-auto"
-                  onClick={saveGistSettings}
+                  onClick={() => {
+                    void syncNow()
+                  }}
+                  disabled={
+                    !gistToken.trim() ||
+                    !gistId.trim() ||
+                    syncStatus === "syncing"
+                  }
                 >
-                  Re-fetch Gist
+                  <RefreshCw
+                    className={cn(syncStatus === "syncing" && "animate-spin")}
+                  />
+                  {syncStatus === "syncing" ? "Syncing…" : "Sync now"}
                 </Button>
                 <Button
                   type="button"
@@ -423,41 +436,32 @@ export default function PoolsPage() {
                   size="sm"
                   className="w-full sm:w-auto"
                   onClick={() => {
-                    void pullFromGist()
+                    void replaceFromGist()
                   }}
                   disabled={!gistToken.trim() || !gistId.trim()}
                 >
-                  Load from Gist
+                  Replace local with Gist
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                Syncing merges both sides, so edits made on another device are
+                never overwritten. Use &quot;Replace local with Gist&quot; only
+                to discard what is in this browser.
+              </p>
               {gistFormMsg ? (
                 <p className="text-xs text-muted-foreground">{gistFormMsg}</p>
               ) : null}
-              {gistQuery.isError && gistQuery.error ? (
-                <p className="text-xs text-destructive">
-                  {gistQuery.error instanceof Error
-                    ? gistQuery.error.message
-                    : "Gist request failed"}
-                </p>
-              ) : null}
-              {pushGistMutation.isError && pushGistMutation.error ? (
-                <p className="text-xs text-destructive">
-                  Push:{" "}
-                  {pushGistMutation.error instanceof Error
-                    ? pushGistMutation.error.message
-                    : "failed"}
-                </p>
-              ) : null}
-              {pushGistMutation.isPending ? (
-                <p className="text-xs text-muted-foreground">
-                  Pushing to Gist…
-                </p>
+              {syncError ? (
+                <p className="text-xs text-destructive">{syncError}</p>
               ) : null}
               <p className="text-[0.65rem] text-muted-foreground">
-                Last known export: {getLastExportAt() ?? "—"} ·{" "}
-                {gistQuery.isFetching
-                  ? "fetching Gist…"
-                  : "Gist in sync (when configured)"}
+                {syncStatus === "off"
+                  ? "Sync is off — data stays in this browser only."
+                  : hasPendingChanges
+                    ? "Local changes not yet on the Gist."
+                    : "Everything on this device is on the Gist."}{" "}
+                · Last sync: {lastSyncedAt ?? "—"} · Last push:{" "}
+                {getLastExportAt() ?? "—"}
               </p>
             </div>
           </CardContent>
@@ -524,8 +528,9 @@ export default function PoolsPage() {
           <DialogHeader>
             <DialogTitle>Import data</DialogTitle>
             <DialogDescription>
-              Paste a JSON export (same format as &quot;Copy data&quot;). This
-              replaces the current in-browser data for {STORAGE_KEY}.
+              Paste a JSON export (same format as &quot;Copy data&quot;). It is
+              merged into the current data for {STORAGE_KEY}, so nothing already
+              in this browser is lost.
             </DialogDescription>
           </DialogHeader>
           <div className="flex flex-col gap-2">

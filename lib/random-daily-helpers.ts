@@ -1,9 +1,9 @@
 import {
   type AppSnapshot,
-  type Pool,
-  type ShuffleConfig,
   type Task,
   assertValidSnapshot,
+  emptySnapshot,
+  isLive,
   STORAGE_KEY,
 } from "@/lib/snapshot"
 
@@ -41,9 +41,9 @@ export function partitionTasksForDraw(tasks: Task[]): {
   const yellowCandidates: Task[] = []
   const mandatory: Task[] = []
   for (const t of tasks) {
+    if (!isLive(t)) continue
     const p = t.priority
-    if (p === 1) archived.push(t)
-    else if (p === 2) yellowCandidates.push(t)
+    if (p === 2) yellowCandidates.push(t)
     else if (p === 3) mandatory.push(t)
     else archived.push(t)
   }
@@ -58,49 +58,12 @@ export function pickRandomSubset(tasks: Task[], n: number): Task[] {
 }
 
 export function loadSnapshot(): AppSnapshot {
-  if (typeof window === "undefined") {
-    return {
-      pools: [],
-      dailyPlan: null,
-      shuffleConfig: {},
-      dailyPlanHistory: {},
-    }
-  }
+  if (typeof window === "undefined") return emptySnapshot()
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    if (!raw) {
-      return {
-        pools: [],
-        dailyPlan: null,
-        shuffleConfig: {},
-        dailyPlanHistory: {},
-      }
-    }
+    if (!raw) return emptySnapshot()
     return assertValidSnapshot(JSON.parse(raw) as unknown)
   } catch {
-    return {
-      pools: [],
-      dailyPlan: null,
-      shuffleConfig: {},
-      dailyPlanHistory: {},
-    }
+    return emptySnapshot()
   }
-}
-
-export function buildDefaultShuffleConfig(
-  pools: Pool[],
-  prev: ShuffleConfig,
-): ShuffleConfig {
-  const next: ShuffleConfig = { ...prev }
-  for (const p of pools) {
-    if (!next[p.id]) {
-      next[p.id] = { include: true, count: 1 }
-    }
-  }
-  for (const k of Object.keys(next)) {
-    if (!pools.some((p) => p.id === k)) {
-      delete next[k]
-    }
-  }
-  return next
 }

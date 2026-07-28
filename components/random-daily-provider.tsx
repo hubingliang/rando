@@ -1,13 +1,8 @@
 "use client"
 
 import * as React from "react"
-import {
-  useMutation,
-  useQuery,
-  useQueryClient,
-  type UseMutationResult,
-  type UseQueryResult,
-} from "@tanstack/react-query"
+import { useQuery } from "@tanstack/react-query"
+import { toast } from "sonner"
 
 import {
   buildGistJson,
@@ -16,8 +11,8 @@ import {
   gistPut,
   readGistFilePayload,
 } from "@/lib/gist-api"
+import { mergeSnapshots, pruneTombstones, snapshotFingerprint } from "@/lib/merge"
 import {
-  buildDefaultShuffleConfig,
   loadSnapshot,
   newId,
   partitionTasksForDraw,
@@ -33,16 +28,20 @@ import {
   type ShuffleConfig,
   type Task,
   type TaskPriority,
-  coerceAppSnapshot,
-  parseAppSnapshotString,
-  loadGithubCreds,
-  saveGithubCreds,
-  setLastExportAt,
-  getLastExportAt,
   STORAGE_KEY,
+  emptySnapshot,
+  getPlan,
   hasTodaysPlan,
+  livePools,
+  loadGithubCreds,
+  nextOrder,
+  nowIso,
+  parseAppSnapshotString,
+  putPlanInHistory,
+  saveGithubCreds,
+  serializeSnapshot,
+  setLastExportAt,
 } from "@/lib/snapshot"
-import { toast } from "sonner"
 
 import { Button } from "@/components/ui/button"
 import { syncDailyReminderSchedule } from "@/lib/reminder"
@@ -55,7 +54,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 
-type GistGetData = Awaited<ReturnType<typeof gistGet>>
+export type SyncStatus = "off" | "idle" | "syncing" | "error"
 
 export type RandomDailyContextValue = {
   ready: boolean
@@ -88,8 +87,12 @@ export type RandomDailyContextValue = {
   gistId: string
   setGistId: React.Dispatch<React.SetStateAction<string>>
   gistFormMsg: string
-  gistQuery: UseQueryResult<GistGetData, Error>
-  pushGistMutation: UseMutationResult<string, Error, void, unknown>
+  /** "off" until a token and Gist id are set; "error" means local edits are not backed up yet. */
+  syncStatus: SyncStatus
+  syncError: string | null
+  lastSyncedAt: string | null
+  /** True when local edits have not reached the Gist yet. */
+  hasPendingChanges: boolean
   copyDone: boolean
   taskEditorOpen: boolean
   taskEditorTitle: string
@@ -116,11 +119,12 @@ export type RandomDailyContextValue = {
   setInclude: (poolId: string, include: boolean) => void
   setCount: (poolId: string, count: number) => void
   toggleItemDone: (itemId: string, done: boolean) => void
+  generateTodayPlan: () => boolean
   copyDataToClipboard: () => Promise<void>
   runImport: () => void
-  saveGistSettings: () => void
+  syncNow: () => Promise<void>
   createGist: () => Promise<void>
-  pullFromGist: () => Promise<void>
+  replaceFromGist: () => Promise<void>
   openTaskEditor: (poolId: string, taskId: string) => void
   closeTaskEditor: () => void
   saveTaskEditor: () => void
@@ -138,16 +142,14 @@ export function useRandomDaily() {
   return ctx
 }
 
+const PUSH_DEBOUNCE_MS = 2000
+
 export function RandomDailyProvider({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const [pools, setPools] = React.useState<Pool[]>([])
-  const [dailyPlan, setDailyPlan] = React.useState<DailyPlan | null>(null)
-  const [dailyPlanHistory, setDailyPlanHistory] =
-    React.useState<DailyPlanHistory>({})
-  const [shuffleConfig, setShuffleConfig] = React.useState<ShuffleConfig>({})
+  const [snapshot, setSnapshot] = React.useState<AppSnapshot>(emptySnapshot)
   const [ready, setReady] = React.useState(false)
   const [activePoolTab, setActivePoolTab] = React.useState("")
 
@@ -158,9 +160,9 @@ export function RandomDailyProvider({
   const [newTaskPriority, setNewTaskPriority] = React.useState<
     Record<string, TaskPriority>
   >({})
-  const [poolPendingDelete, setPoolPendingDelete] = React.useState<string | null>(
-    null,
-  )
+  const [poolPendingDelete, setPoolPendingDelete] = React.useState<
+    string | null
+  >(null)
   const [emptyGenerateOpen, setEmptyGenerateOpen] = React.useState(false)
   const [importOpen, setImportOpen] = React.useState(false)
   const [importText, setImportText] = React.useState("")
@@ -169,6 +171,9 @@ export function RandomDailyProvider({
   const [gistToken, setGistToken] = React.useState("")
   const [gistId, setGistId] = React.useState("")
   const [gistFormMsg, setGistFormMsg] = React.useState("")
+  const [syncing, setSyncing] = React.useState(false)
+  const [syncError, setSyncError] = React.useState<string | null>(null)
+  const [lastSyncedAt, setLastSyncedAt] = React.useState<string | null>(null)
 
   const [taskEditorOpen, setTaskEditorOpen] = React.useState(false)
   const [taskEditorCtx, setTaskEditorCtx] = React.useState<{
@@ -177,122 +182,88 @@ export function RandomDailyProvider({
   } | null>(null)
   const [taskEditorTitle, setTaskEditorTitle] = React.useState("")
   const [taskEditorNotes, setTaskEditorNotes] = React.useState("")
-  const queryClient = useQueryClient()
-  const skipGistPushRef = React.useRef(false)
-  const lastAppliedRemoteExportRef = React.useRef<string | null>(null)
 
-  const applyAppSnapshot = React.useCallback(
-    (
-      raw: Pick<AppSnapshot, "pools" | "dailyPlan" | "shuffleConfig"> & {
-        dailyPlanHistory?: DailyPlanHistory
-      },
-    ) => {
-      const full = coerceAppSnapshot(raw)
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(full))
-      setPools(full.pools)
-      setDailyPlan(full.dailyPlan)
-      setDailyPlanHistory(full.dailyPlanHistory)
-      setShuffleConfig(buildDefaultShuffleConfig(full.pools, full.shuffleConfig))
-      if (full.pools[0]) {
-        setActivePoolTab(full.pools[0].id)
-      } else {
-        setActivePoolTab("")
-      }
+  const gistConfigured = Boolean(gistToken && gistId)
+
+  /** Latest snapshot, readable from async sync code without stale closures. */
+  const snapshotRef = React.useRef(snapshot)
+  /** Fingerprint of the last remote payload we already folded in. */
+  const seenRemoteFingerprintRef = React.useRef<string | null>(null)
+  const syncingRef = React.useRef(false)
+  /** Fingerprint of what we believe the Gist currently holds. */
+  const [syncedFingerprint, setSyncedFingerprint] = React.useState<
+    string | null
+  >(null)
+
+  React.useEffect(() => {
+    snapshotRef.current = snapshot
+  }, [snapshot])
+
+  const fingerprint = React.useMemo(
+    () => snapshotFingerprint(snapshot),
+    [snapshot],
+  )
+
+  const today = todayYmd()
+  const pools = React.useMemo(() => livePools(snapshot.pools), [snapshot.pools])
+  const dailyPlanHistory = snapshot.dailyPlanHistory
+  const shuffleConfig = snapshot.shuffleConfig
+  const todaysPlan = getPlan(dailyPlanHistory, today)
+  const dailyPlan = todaysPlan
+  const completedCount = todaysPlan
+    ? todaysPlan.items.filter((i) => i.done).length
+    : 0
+  const totalCount = todaysPlan?.items.length ?? 0
+
+  const updateSnapshot = React.useCallback(
+    (fn: (s: AppSnapshot) => AppSnapshot) => {
+      setSnapshot((prev) => fn(prev))
     },
     [],
   )
 
-  const gistQuery = useQuery({
-    queryKey: ["random-daily-gist", gistId],
-    queryFn: () => {
-      if (!gistToken || !gistId) {
-        throw new Error("Missing Gist settings")
-      }
-      return gistGet(gistToken, gistId)
+  const updatePool = React.useCallback(
+    (poolId: string, fn: (p: Pool) => Pool) => {
+      updateSnapshot((s) => ({
+        ...s,
+        pools: s.pools.map((p) => (p.id === poolId ? fn(p) : p)),
+      }))
     },
-    enabled: ready && Boolean(gistToken && gistId),
-    staleTime: 30_000,
-  })
+    [updateSnapshot],
+  )
 
-  const pushGistMutation = useMutation({
-    mutationFn: async () => {
-      if (!gistToken || !gistId) {
-        throw new Error("Missing Gist token or id")
-      }
-      const body = buildGistJson({
-        pools,
-        dailyPlan,
-        shuffleConfig,
-        dailyPlanHistory,
-      })
-      await gistPut(gistToken, gistId, body)
-      return body
+  const updateTask = React.useCallback(
+    (poolId: string, taskId: string, fn: (t: Task) => Task) => {
+      updatePool(poolId, (p) => ({
+        ...p,
+        tasks: p.tasks.map((t) => (t.id === taskId ? fn(t) : t)),
+      }))
     },
-    onSuccess: (body) => {
-      const p = JSON.parse(body) as { exportedAt: string }
-      setLastExportAt(p.exportedAt)
-    },
-  })
+    [updatePool],
+  )
 
-  const generatePlanForToday = React.useCallback((): boolean => {
-    const date = todayYmd()
-    const items: DailyPlanItem[] = []
-    for (const pool of pools) {
-      const cfg = shuffleConfig[pool.id] ?? { include: true, count: 1 }
-      if (!cfg.include) continue
-      if (pool.tasks.length === 0) continue
-
-      const { mandatory, yellowCandidates } = partitionTasksForDraw(pool.tasks)
-
-      for (const t of mandatory) {
-        items.push({
-          id: newId(),
-          poolId: pool.id,
-          taskId: t.id,
-          text: t.text,
-          priority: t.priority,
-          ...(t.notes != null && t.notes.trim() !== ""
-            ? { notes: t.notes }
-            : {}),
-          done: false,
-        })
-      }
-
-      const randomYellow = pickRandomSubset(
-        yellowCandidates,
-        Math.max(0, cfg.count),
-      )
-      for (const t of randomYellow) {
-        items.push({
-          id: newId(),
-          poolId: pool.id,
-          taskId: t.id,
-          text: t.text,
-          priority: t.priority,
-          ...(t.notes != null && t.notes.trim() !== ""
-            ? { notes: t.notes }
-            : {}),
-          done: false,
-        })
-      }
+  /**
+   * Fold a remote snapshot into the local one. Merging is always safe: neither
+   * side can lose data, and both devices reach the same result regardless of
+   * who syncs first.
+   */
+  const absorbRemote = React.useCallback((remote: AppSnapshot): AppSnapshot => {
+    const current = snapshotRef.current
+    const merged = pruneTombstones(mergeSnapshots(current, remote))
+    if (snapshotFingerprint(merged) === snapshotFingerprint(current)) {
+      return current
     }
-    if (items.length === 0) {
-      setEmptyGenerateOpen(true)
-      return false
-    }
-    setDailyPlan({ date, items })
-    return true
-  }, [pools, shuffleConfig])
+    snapshotRef.current = merged
+    setSnapshot(merged)
+    return merged
+  }, [])
 
   React.useEffect(() => {
-    const s = loadSnapshot()
-    setPools(s.pools)
-    setDailyPlan(s.dailyPlan)
-    setDailyPlanHistory(s.dailyPlanHistory)
-    setShuffleConfig(buildDefaultShuffleConfig(s.pools, s.shuffleConfig))
-    if (s.pools[0]) {
-      setActivePoolTab(s.pools[0].id)
-    }
+    const loaded = pruneTombstones(loadSnapshot())
+    snapshotRef.current = loaded
+    setSnapshot(loaded)
+    const first = livePools(loaded.pools)[0]
+    if (first) setActivePoolTab(first.id)
     const c = loadGithubCreds()
     setGistToken(c.token)
     setGistId(c.gistId)
@@ -301,14 +272,11 @@ export function RandomDailyProvider({
 
   React.useEffect(() => {
     if (!ready) return
-    const payload: AppSnapshot = {
-      pools,
-      dailyPlan,
-      shuffleConfig,
-      dailyPlanHistory,
-    }
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload))
-  }, [pools, dailyPlan, shuffleConfig, dailyPlanHistory, ready])
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify(serializeSnapshot(snapshot, todayYmd())),
+    )
+  }, [ready, snapshot])
 
   React.useEffect(() => {
     if (!ready) return
@@ -326,12 +294,7 @@ export function RandomDailyProvider({
     return () => document.removeEventListener("visibilitychange", onVisibility)
   }, [ready, dailyPlan])
 
-  React.useEffect(() => {
-    if (!ready || !dailyPlan) return
-    setDailyPlanHistory((h) => ({ ...h, [dailyPlan.date]: dailyPlan }))
-  }, [dailyPlan, ready])
-
-  /** Persist PAT + Gist id whenever they change (previously only "Save settings" wrote these). */
+  /** Persist PAT + Gist id whenever they change. */
   React.useEffect(() => {
     if (!ready) return
     saveGithubCreds({ token: gistToken, gistId: gistId })
@@ -343,166 +306,224 @@ export function RandomDailyProvider({
       return
     }
     if (!pools.some((p) => p.id === activePoolTab)) {
-      setActivePoolTab(pools[0].id)
+      setActivePoolTab(pools[0]!.id)
     }
   }, [pools, activePoolTab])
 
-  React.useEffect(() => {
-    if (!ready) return
+  const gistQuery = useQuery({
+    queryKey: ["random-daily-gist", gistId],
+    queryFn: () => gistGet(gistToken, gistId),
+    enabled: ready && gistConfigured,
+    staleTime: 30_000,
+    retry: 1,
+  })
+
+  /**
+   * Read-modify-write against the Gist. Fetching immediately before writing is
+   * what stops a device from overwriting edits another device made in the
+   * meantime; the write is skipped entirely when the merge changed nothing.
+   */
+  const syncNow = React.useCallback(async () => {
     if (!gistToken || !gistId) return
-    if (!gistQuery.isFetched) return
-    if (skipGistPushRef.current) {
-      skipGistPushRef.current = false
+    if (syncingRef.current) return
+    syncingRef.current = true
+    setSyncing(true)
+    setSyncError(null)
+    try {
+      const res = await gistGet(gistToken.trim(), gistId.trim())
+      const raw = res.content?.trim()
+      const remote = raw ? readGistFilePayload(raw) : emptySnapshot()
+      const remotePrint = snapshotFingerprint(remote)
+      seenRemoteFingerprintRef.current = remotePrint
+
+      const merged = absorbRemote(remote)
+      const mergedPrint = snapshotFingerprint(merged)
+
+      if (mergedPrint !== remotePrint) {
+        const body = buildGistJson(merged, todayYmd())
+        await gistPut(gistToken.trim(), gistId.trim(), body)
+        const { exportedAt } = JSON.parse(body) as { exportedAt: string }
+        setLastExportAt(exportedAt)
+        seenRemoteFingerprintRef.current = mergedPrint
+      }
+
+      setSyncedFingerprint(mergedPrint)
+      setLastSyncedAt(nowIso())
+    } catch (e) {
+      setSyncError(e instanceof Error ? e.message : "Sync failed")
+    } finally {
+      syncingRef.current = false
+      setSyncing(false)
+    }
+  }, [gistToken, gistId, absorbRemote])
+
+  /** Fold in whatever the background query fetched, without writing anything back yet. */
+  React.useEffect(() => {
+    if (!ready || !gistQuery.isSuccess) return
+    const raw = gistQuery.data?.content?.trim()
+    let remote: AppSnapshot
+    try {
+      remote = raw ? readGistFilePayload(raw) : emptySnapshot()
+    } catch {
+      setSyncError("Gist file is not a Random Daily export")
       return
     }
+    const remotePrint = snapshotFingerprint(remote)
+    if (remotePrint === seenRemoteFingerprintRef.current) return
+    seenRemoteFingerprintRef.current = remotePrint
+    absorbRemote(remote)
+    // The merge may have added local-only records; the push effect below
+    // notices the fingerprint gap and uploads them.
+    setSyncedFingerprint(remotePrint)
+    setSyncError(null)
+    setLastSyncedAt(nowIso())
+  }, [ready, gistQuery.isSuccess, gistQuery.data, absorbRemote])
+
+  const hasPendingChanges = gistConfigured && fingerprint !== syncedFingerprint
+
+  /** Push only when local content actually differs from what the Gist holds. */
+  React.useEffect(() => {
+    if (!ready || !gistConfigured) return
+    if (!gistQuery.isFetched) return
+    if (fingerprint === syncedFingerprint) return
     const t = window.setTimeout(() => {
-      pushGistMutation.mutate()
-    }, 2000)
+      void syncNow()
+    }, PUSH_DEBOUNCE_MS)
     return () => clearTimeout(t)
   }, [
     ready,
-    pools,
-    dailyPlan,
-    shuffleConfig,
-    dailyPlanHistory,
-    gistToken,
-    gistId,
+    gistConfigured,
     gistQuery.isFetched,
-    pushGistMutation.mutate,
+    fingerprint,
+    syncedFingerprint,
+    syncNow,
   ])
 
-  React.useEffect(() => {
-    if (!ready) return
+  const generateTodayPlan = React.useCallback(
+    (options?: { silent?: boolean }): boolean => {
+      const date = todayYmd()
+      const createdAt = nowIso()
+      const current = snapshotRef.current
+      const items: DailyPlanItem[] = []
 
-    const today = todayYmd()
-    const gistConfigured = Boolean(gistToken && gistId)
-
-    if (gistConfigured && !gistQuery.isFetched) return
-
-    if (gistConfigured && gistQuery.isSuccess) {
-      const raw = gistQuery.data?.content?.trim()
-      if (raw) {
-        try {
-          const p = readGistFilePayload(raw)
-          const localHasToday = hasTodaysPlan(
-            today,
-            dailyPlan,
-            dailyPlanHistory,
-          )
-          const remoteHasToday = hasTodaysPlan(
-            today,
-            p.dailyPlan,
-            p.dailyPlanHistory ?? {},
-          )
-
-          if (lastAppliedRemoteExportRef.current !== p.exportedAt) {
-            const remoteTime = new Date(p.exportedAt).getTime()
-            const localExportIso = getLastExportAt()
-            const localExportTime = localExportIso
-              ? new Date(localExportIso).getTime()
-              : 0
-
-            const gistHasData =
-              p.pools.length > 0 ||
-              p.dailyPlan != null ||
-              Object.keys(p.dailyPlanHistory ?? {}).length > 0
-
-            const remoteIsNewer = remoteTime > localExportTime
-            const hydrateEmptyLocal = pools.length === 0 && gistHasData
-            const shouldApplyRemote =
-              remoteIsNewer ||
-              hydrateEmptyLocal ||
-              (remoteHasToday && !localHasToday)
-
-            if (shouldApplyRemote) {
-              applyAppSnapshot({
-                pools: p.pools,
-                dailyPlan: p.dailyPlan,
-                shuffleConfig: p.shuffleConfig,
-                dailyPlanHistory: p.dailyPlanHistory,
-              })
-              setLastExportAt(p.exportedAt)
-              skipGistPushRef.current = true
-              lastAppliedRemoteExportRef.current = p.exportedAt
-              return
-            }
-
-            lastAppliedRemoteExportRef.current = p.exportedAt
-          }
-
-          if (remoteHasToday) return
-        } catch {
-          /* not our format */
+      for (const pool of livePools(current.pools)) {
+        const cfg = current.shuffleConfig[pool.id] ?? { include: true, count: 1 }
+        if (!cfg.include) continue
+        const { mandatory, yellowCandidates } = partitionTasksForDraw(pool.tasks)
+        const drawn = [
+          ...mandatory,
+          ...pickRandomSubset(yellowCandidates, Math.max(0, cfg.count)),
+        ]
+        for (const t of drawn) {
+          items.push({
+            id: newId(),
+            poolId: pool.id,
+            taskId: t.id,
+            text: t.text,
+            priority: t.priority,
+            ...(t.notes != null && t.notes.trim() !== ""
+              ? { notes: t.notes }
+              : {}),
+            done: false,
+          })
         }
       }
-    }
 
-    if (hasTodaysPlan(today, dailyPlan, dailyPlanHistory)) return
+      if (items.length === 0) {
+        if (!options?.silent) setEmptyGenerateOpen(true)
+        return false
+      }
+
+      updateSnapshot((s) => ({
+        ...s,
+        dailyPlanHistory: putPlanInHistory(s.dailyPlanHistory, {
+          date,
+          items,
+          createdAt,
+        }),
+      }))
+      return true
+    },
+    [updateSnapshot],
+  )
+
+  /**
+   * Draw today's plan automatically, but never before we have seen the Gist.
+   * Drawing while the remote state is unknown is exactly what produced two
+   * different plans for the same day on two devices.
+   */
+  React.useEffect(() => {
+    if (!ready) return
+    if (gistConfigured && lastSyncedAt == null) return
+    if (hasTodaysPlan(today, dailyPlanHistory)) return
     if (pools.length === 0) return
-
-    generatePlanForToday()
+    generateTodayPlan({ silent: true })
   }, [
     ready,
-    gistToken,
-    gistId,
-    gistQuery.isFetched,
-    gistQuery.isSuccess,
-    gistQuery.data,
-    dailyPlan,
+    gistConfigured,
+    lastSyncedAt,
+    today,
     dailyPlanHistory,
     pools.length,
-    applyAppSnapshot,
-    generatePlanForToday,
+    generateTodayPlan,
   ])
-
-  const today = todayYmd()
-  const todaysPlan =
-    dailyPlan && dailyPlan.date === today ? dailyPlan : null
-  const completedCount = todaysPlan
-    ? todaysPlan.items.filter((i) => i.done).length
-    : 0
-  const totalCount = todaysPlan?.items.length ?? 0
 
   const setTaskDraft = (poolId: string, v: string) => {
     setNewTaskText((m) => ({ ...m, [poolId]: v }))
   }
 
-  const triggerAllDoneCelebration = React.useCallback(() => {
-    toast.success("All done for today.")
-  }, [])
-
   const toggleItemDone = (itemId: string, done: boolean) => {
-    setDailyPlan((plan) => {
-      if (!plan) return plan
-      const prevAllDone = plan.items.every((i) => i.done)
-      const nextItems = plan.items.map((i) =>
-        i.id === itemId ? { ...i, done } : i,
-      )
-      const nextAllDone = nextItems.every((i) => i.done)
-      if (
-        !prevAllDone &&
-        nextAllDone &&
-        nextItems.length > 0 &&
-        done === true
-      ) {
-        queueMicrotask(() => triggerAllDoneCelebration())
+    const plan = snapshot.dailyPlanHistory[today]
+    if (!plan) return
+    const at = nowIso()
+    const items = plan.items.map((i) =>
+      i.id === itemId ? { ...i, done, doneAt: at } : i,
+    )
+    const finishedNow =
+      done &&
+      items.length > 0 &&
+      items.every((i) => i.done) &&
+      !plan.items.every((i) => i.done)
+
+    updateSnapshot((s) => {
+      const target = s.dailyPlanHistory[today]
+      if (!target) return s
+      return {
+        ...s,
+        dailyPlanHistory: putPlanInHistory(s.dailyPlanHistory, {
+          ...target,
+          items: target.items.map((i) =>
+            i.id === itemId ? { ...i, done, doneAt: at } : i,
+          ),
+        }),
       }
-      return { ...plan, items: nextItems }
     })
+
+    if (finishedNow) toast.success("All done for today.")
   }
 
   const movePool = (poolId: string, direction: "up" | "down") => {
-    const delta = direction === "up" ? -1 : 1
-    setPools((prev) => {
-      const i = prev.findIndex((p) => p.id === poolId)
-      if (i < 0) return prev
-      const j = i + delta
-      if (j < 0 || j >= prev.length) return prev
-      const next = [...prev]
-      const t = next[i]!
-      next[i] = next[j]!
-      next[j] = t
-      return next
+    updateSnapshot((s) => {
+      const visible = livePools(s.pools)
+      const i = visible.findIndex((p) => p.id === poolId)
+      if (i < 0) return s
+      const j = i + (direction === "up" ? -1 : 1)
+      if (j < 0 || j >= visible.length) return s
+
+      const reordered = [...visible]
+      reordered[i] = visible[j]!
+      reordered[j] = visible[i]!
+      const nextOrders = new Map(reordered.map((p, index) => [p.id, index]))
+      const at = nowIso()
+
+      return {
+        ...s,
+        pools: s.pools.map((p) => {
+          const order = nextOrders.get(p.id)
+          if (order === undefined || order === p.order) return p
+          return { ...p, order, updatedAt: at }
+        }),
+      }
     })
   }
 
@@ -510,41 +531,50 @@ export function RandomDailyProvider({
     const name = newPoolName.trim()
     if (!name) return
     const id = newId()
-    setPools((prev) => [...prev, { id, name, tasks: [] }])
-    setShuffleConfig((c) => ({
-      ...c,
-      [id]: { include: true, count: 1 },
+    const at = nowIso()
+    updateSnapshot((s) => ({
+      ...s,
+      pools: [
+        ...s.pools,
+        { id, name, tasks: [], order: nextOrder(s.pools), updatedAt: at },
+      ],
+      shuffleConfig: {
+        ...s.shuffleConfig,
+        [id]: { include: true, count: 1, updatedAt: at },
+      },
     }))
     setActivePoolTab(id)
     setNewPoolName("")
   }
 
+  /** Deletes leave a tombstone so the removal reaches other devices. */
   const removePool = (id: string) => {
-    setPools((p) => p.filter((x) => x.id !== id))
-    setShuffleConfig((c) => {
-      const n = { ...c }
-      delete n[id]
-      return n
-    })
+    const at = nowIso()
+    updatePool(id, (p) => ({ ...p, updatedAt: at, deletedAt: at }))
   }
 
   const confirmRemovePool = () => {
-    if (poolPendingDelete) {
-      removePool(poolPendingDelete)
-    }
+    if (poolPendingDelete) removePool(poolPendingDelete)
     setPoolPendingDelete(null)
   }
 
   const addTask = (poolId: string) => {
-    const t = (newTaskText[poolId] ?? "").trim()
-    if (!t) return
-    const pr = newTaskPriority[poolId] ?? 2
-    const task: Task = { id: newId(), text: t, priority: pr }
-    setPools((prev) =>
-      prev.map((p) =>
-        p.id === poolId ? { ...p, tasks: [...p.tasks, task] } : p,
-      ),
-    )
+    const text = (newTaskText[poolId] ?? "").trim()
+    if (!text) return
+    const priority = newTaskPriority[poolId] ?? 2
+    updatePool(poolId, (p) => ({
+      ...p,
+      tasks: [
+        ...p.tasks,
+        {
+          id: newId(),
+          text,
+          priority,
+          order: nextOrder(p.tasks),
+          updatedAt: nowIso(),
+        },
+      ],
+    }))
     setTaskDraft(poolId, "")
   }
 
@@ -553,65 +583,56 @@ export function RandomDailyProvider({
     taskId: string,
     priority: TaskPriority,
   ) => {
-    setPools((prev) =>
-      prev.map((p) =>
-        p.id === poolId
-          ? {
-              ...p,
-              tasks: p.tasks.map((t) =>
-                t.id === taskId ? { ...t, priority } : t,
-              ),
-            }
-          : p,
-      ),
-    )
+    updateTask(poolId, taskId, (t) => ({
+      ...t,
+      priority,
+      updatedAt: nowIso(),
+    }))
   }
 
   const removeTask = (poolId: string, taskId: string) => {
-    setPools((prev) =>
-      prev.map((p) =>
-        p.id === poolId
-          ? { ...p, tasks: p.tasks.filter((t) => t.id !== taskId) }
-          : p,
-      ),
-    )
+    const at = nowIso()
+    updateTask(poolId, taskId, (t) => ({
+      ...t,
+      updatedAt: at,
+      deletedAt: at,
+    }))
   }
 
-  const setTaskText = (poolId: string, taskId: string, text: string) => {
-    setPools((prev) =>
-      prev.map((p) =>
-        p.id !== poolId
-          ? p
-          : {
-              ...p,
-              tasks: p.tasks.map((t) =>
-                t.id === taskId ? { ...t, text } : t,
-              ),
-            },
-      ),
-    )
+  const updatePoolName = (poolId: string, name: string) => {
+    updatePool(poolId, (p) => ({ ...p, name, updatedAt: nowIso() }))
   }
 
-  const setTaskNotes = (poolId: string, taskId: string, notes: string) => {
-    const empty = notes.trim() === ""
-    setPools((prev) =>
-      prev.map((p) =>
-        p.id !== poolId
-          ? p
-          : {
-              ...p,
-              tasks: p.tasks.map((t) => {
-                if (t.id !== taskId) return t
-                if (empty) {
-                  const rest = { ...t }
-                  delete rest.notes
-                  return rest
-                }
-                return { ...t, notes }
-              }),
-            },
-      ),
+  const setInclude = (poolId: string, include: boolean) => {
+    updateSnapshot((s) => ({
+      ...s,
+      shuffleConfig: {
+        ...s.shuffleConfig,
+        [poolId]: {
+          count: s.shuffleConfig[poolId]?.count ?? 1,
+          include,
+          updatedAt: nowIso(),
+        },
+      },
+    }))
+  }
+
+  const setCount = (poolId: string, count: number) => {
+    const n = Math.max(
+      0,
+      Math.min(99, Math.floor(Number.isNaN(count) ? 0 : count)),
     )
+    updateSnapshot((s) => ({
+      ...s,
+      shuffleConfig: {
+        ...s.shuffleConfig,
+        [poolId]: {
+          include: s.shuffleConfig[poolId]?.include ?? true,
+          count: n,
+          updatedAt: nowIso(),
+        },
+      },
+    }))
   }
 
   const openTaskEditor = (poolId: string, taskId: string) => {
@@ -633,39 +654,20 @@ export function RandomDailyProvider({
     if (!taskEditorCtx) return
     const title = taskEditorTitle.trim()
     if (!title) return
-    setTaskText(taskEditorCtx.poolId, taskEditorCtx.taskId, title)
-    setTaskNotes(taskEditorCtx.poolId, taskEditorCtx.taskId, taskEditorNotes)
+    const notes = taskEditorNotes.trim()
+    updateTask(taskEditorCtx.poolId, taskEditorCtx.taskId, (t) => {
+      const next: Task = { ...t, text: title, updatedAt: nowIso() }
+      if (notes === "") delete next.notes
+      else next.notes = taskEditorNotes
+      return next
+    })
     closeTaskEditor()
-  }
-
-  const updatePoolName = (poolId: string, name: string) => {
-    setPools((p) => p.map((x) => (x.id === poolId ? { ...x, name } : x)))
-  }
-
-  const setInclude = (poolId: string, include: boolean) => {
-    setShuffleConfig((c) => ({
-      ...c,
-      [poolId]: { ...(c[poolId] ?? { include: true, count: 1 }), include },
-    }))
-  }
-
-  const setCount = (poolId: string, count: number) => {
-    const n = Math.max(0, Math.min(99, Math.floor(Number.isNaN(count) ? 0 : count)))
-    setShuffleConfig((c) => ({
-      ...c,
-      [poolId]: { ...(c[poolId] ?? { include: true, count: 1 }), count: n },
-    }))
   }
 
   const copyDataToClipboard = async () => {
     try {
       const text = JSON.stringify(
-        {
-          pools,
-          dailyPlan,
-          shuffleConfig,
-          dailyPlanHistory,
-        } satisfies AppSnapshot,
+        serializeSnapshot(snapshot, todayYmd()),
         null,
         2,
       )
@@ -674,21 +676,20 @@ export function RandomDailyProvider({
       window.setTimeout(() => setCopyDone(false), 2000)
     } catch {
       if (typeof window !== "undefined") {
-        window.alert(
-          "Could not copy. Allow clipboard or use https / localhost.",
-        )
+        window.alert("Could not copy. Allow clipboard or use https / localhost.")
       }
     }
   }
 
+  /** Imports merge rather than replace, so pasting an old backup cannot erase newer work. */
   const runImport = () => {
     setImportError("")
     try {
-      const s = parseAppSnapshotString(importText)
-      applyAppSnapshot(s)
-      setLastExportAt(new Date().toISOString())
+      const imported = parseAppSnapshotString(importText)
+      absorbRemote(imported)
       setImportOpen(false)
       setImportText("")
+      toast.success("Import merged into your data.")
     } catch (e) {
       setImportError(
         e instanceof Error
@@ -698,12 +699,6 @@ export function RandomDailyProvider({
     }
   }
 
-  const saveGistSettings = () => {
-    setGistFormMsg("Gist preview refreshed")
-    window.setTimeout(() => setGistFormMsg(""), 2000)
-    void queryClient.invalidateQueries({ queryKey: ["random-daily-gist"] })
-  }
-
   const createGist = async () => {
     if (!gistToken.trim()) {
       setGistFormMsg("Set a personal access token first")
@@ -711,30 +706,29 @@ export function RandomDailyProvider({
     }
     setGistFormMsg("")
     try {
-      const body = buildGistJson({
-        pools,
-        dailyPlan,
-        shuffleConfig,
-        dailyPlanHistory,
-      })
+      const body = buildGistJson(snapshotRef.current, todayYmd())
       const { gistId: createdId } = await gistCreate(gistToken.trim(), body)
       setGistId(createdId)
       saveGithubCreds({ token: gistToken.trim(), gistId: createdId })
-      const p = JSON.parse(body) as { exportedAt: string }
-      setLastExportAt(p.exportedAt)
+      const { exportedAt } = JSON.parse(body) as { exportedAt: string }
+      setLastExportAt(exportedAt)
+      const print = snapshotFingerprint(snapshotRef.current)
+      setSyncedFingerprint(print)
+      seenRemoteFingerprintRef.current = print
+      setLastSyncedAt(nowIso())
       setGistFormMsg("Secret Gist created. ID filled in — save is done.")
     } catch (e) {
-      setGistFormMsg(
-        e instanceof Error ? e.message : "Create Gist failed",
-      )
+      setGistFormMsg(e instanceof Error ? e.message : "Create Gist failed")
     }
   }
 
-  const pullFromGist = async () => {
+  /** Escape hatch: throw away local data and take the Gist verbatim. */
+  const replaceFromGist = async () => {
     if (!gistToken || !gistId) return
     if (
-      pools.length > 0 &&
-      !window.confirm("Replace in-browser data with the Gist file?")
+      !window.confirm(
+        "Discard the data in this browser and use the Gist copy instead?",
+      )
     ) {
       return
     }
@@ -745,22 +739,27 @@ export function RandomDailyProvider({
         setGistFormMsg("Gist file is empty")
         return
       }
-      const p = readGistFilePayload(d.content)
-      applyAppSnapshot({
-        pools: p.pools,
-        dailyPlan: p.dailyPlan,
-        shuffleConfig: p.shuffleConfig,
-        dailyPlanHistory: p.dailyPlanHistory,
-      })
-      setLastExportAt(p.exportedAt)
-      skipGistPushRef.current = true
-      setGistFormMsg("Loaded from Gist")
+      const remote = readGistFilePayload(d.content)
+      const print = snapshotFingerprint(remote)
+      snapshotRef.current = remote
+      setSnapshot(remote)
+      setSyncedFingerprint(print)
+      seenRemoteFingerprintRef.current = print
+      setLastSyncedAt(nowIso())
+      setSyncError(null)
+      setGistFormMsg("Replaced with the Gist copy")
     } catch (e) {
-      setGistFormMsg(
-        e instanceof Error ? e.message : "Could not read Gist",
-      )
+      setGistFormMsg(e instanceof Error ? e.message : "Could not read Gist")
     }
   }
+
+  const syncStatus: SyncStatus = !gistConfigured
+    ? "off"
+    : syncing || gistQuery.isFetching
+      ? "syncing"
+      : syncError || gistQuery.isError
+        ? "error"
+        : "idle"
 
   const value: RandomDailyContextValue = {
     ready,
@@ -791,8 +790,16 @@ export function RandomDailyProvider({
     gistId,
     setGistId,
     gistFormMsg,
-    gistQuery,
-    pushGistMutation,
+    syncStatus,
+    syncError:
+      syncError ??
+      (gistQuery.isError
+        ? gistQuery.error instanceof Error
+          ? gistQuery.error.message
+          : "Gist request failed"
+        : null),
+    lastSyncedAt,
+    hasPendingChanges,
     copyDone,
     taskEditorOpen,
     taskEditorTitle,
@@ -814,11 +821,12 @@ export function RandomDailyProvider({
     setInclude,
     setCount,
     toggleItemDone,
+    generateTodayPlan: () => generateTodayPlan(),
     copyDataToClipboard,
     runImport,
-    saveGistSettings,
+    syncNow,
     createGist,
-    pullFromGist,
+    replaceFromGist,
     openTaskEditor,
     closeTaskEditor,
     saveTaskEditor,

@@ -1,5 +1,6 @@
 import {
   assertValidSnapshot,
+  serializeSnapshot,
   GIST_FILE_NAME,
   type AppSnapshot,
   type GistFilePayload,
@@ -82,9 +83,9 @@ export async function gistCreate(
   return r.json() as Promise<{ gistId: string; htmlUrl: string | null }>
 }
 
-export function buildGistJson(snapshot: AppSnapshot): string {
+export function buildGistJson(snapshot: AppSnapshot, today: string): string {
   const payload: GistFilePayload = {
-    ...snapshot,
+    ...serializeSnapshot(snapshot, today),
     version: 1,
     exportedAt: new Date().toISOString(),
   }
